@@ -1,0 +1,24 @@
+# Ignore Attachments folder and all its contents
+Attachments/
+
+# Ignore output files
+Output/
+
+# Ignore log files
+*.log
+
+# Ignore temporary files
+*.tmp
+*.temp
+
+# Ignore DIP and index files (if generated in root)
+!JVA_attachment_indexes_DIP.txt
+!JVA_indexes.txt
+
+# Ignore PowerShell debug files
+*.ps1xml
+
+# Ignore backup files
+*.bak
+*~
+

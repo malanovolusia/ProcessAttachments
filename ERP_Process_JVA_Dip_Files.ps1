@@ -3,18 +3,24 @@
 .SYNOPSIS
     Process JVA (Journal Voucher) attachments and create DIP files for OnBase import
 
-.PARAMETER SID
-    Oracle SID (e.g., ERP19PRO, ERP19TEST)
-
-.PARAMETER OutputPath
-    Path where attachments and DIP files will be saved
-
-.PARAMETER CheckDuplicates
-    Whether to check if attachments already exist in OnBase (default: $true)
-
 .EXAMPLE
-    .\ERP_Process_JVA_Dip_Files.ps1 -SID "ERP19PRO" -OutputPath "\\server\share\JVA\attachments"
+    .\ERP_Process_JVA_Dip_Files.ps1"
 #>
+
+Import-Module "\\erp311script\Library\PSM1\ERP_mod_logging.psm1"
+Import-Module "\\erp311script\Library\PSM1\ERP_mod_wmi.psm1"
+Import-Module "\\erp311script\Library\PSM1\ERP_mod_database.psm1"
+Import-Module "\\erp311script\Library\PSM1\ERP_mod_file.psm1"
+Import-Module "\\erp311script\Library\PSM1\ERP_mod_notify.psm1"
+Import-Module "\\erp311script\Library\PSM1\ERP_mod_datetime.psm1"
+Import-Module "\\erp311script\Library\PSM1\ERP_mod_util.psm1"
+Import-Module "\\erp311script\Library\PSM1\ERP_mod_string.psm1"
+Import-Module "\\erp311script\Library\PSM1\ERP_mod_print.psm1"
+Import-Module "\\erp311script\Library\PSM1\ERP_mod_hrm.psm1"
+Import-Module "\\erp311script\Library\PSM1\ERP_mod_fin.psm1"
+Import-Module "\\erp311script\Library\PSM1\ERP_mod_env.psm1"
+Import-Module "\\erp311script\Library\PSM1\ERP_mod_exec.psm1"
+Import-Module "\\erp311script\Library\PSM1\ERP_mod_interface.psm1"
 
 # Global variables
 $script:JVAattachCount = 0
@@ -80,13 +86,13 @@ function Format-PadDate {
 
 function Test-OnBaseAttachmentExists {
     param(
-        [System.Data.Odbc.OdbcConnection]$Connection,
+        [System.Data.SqlClient.SqlConnection]$Connection,
         [string]$AttachmentID
     )
     if (-not $CheckDuplicates) { return $false }
     try {
         $sql = "SELECT COUNT(*) AS NUM_FOUND FROM hsi.keyitem481 WHERE hsi.keyitem481.keyvaluebig = $AttachmentID AND (SELECT itemtypenum FROM hsi.itemdata WHERE hsi.itemdata.itemnum = hsi.keyitem481.itemnum) = 267"
-        $cmd = New-Object System.Data.Odbc.OdbcCommand($sql, $Connection)
+        $cmd = New-Object System.Data.SqlClient.SqlCommand($sql, $Connection)
         $reader = $cmd.ExecuteReader()
         $count = 0
         if ($reader.Read()) { $count = $reader["NUM_FOUND"] }
@@ -101,7 +107,7 @@ function Test-OnBaseAttachmentExists {
 function Get-JVAAttachments {
     param(
         [System.Data.Odbc.OdbcConnection]$ERPConnection,
-        [System.Data.Odbc.OdbcConnection]$OnBaseConnection,
+        [System.Data.SqlClient.SqlConnection]$OnBaseConnection,
         [string]$DOC_CD,
         [string]$DOC_DEPT_CD,
         [string]$DOC_ID,
@@ -267,18 +273,21 @@ try {
     }
 
     # Database connection strings
-    $erpConnString = "Driver={Oracle in OraClient11g_home1};Dbq=$SID;Uid=PDI_USER;Pwd=your_password;"
+    $erpConnString = GetOracleConnectString $SID "PDI_USER" $False
+
     $onbaseServer = if ($SID -eq "ERP19PRO") { "obdbprod" } else { "obdbtest" }
     $onbaseDatabase = if ($SID -eq "ERP19PRO") { "OnBase" } else { "OB15TEST" }
-    $onbaseConnString = "DRIVER={SQL Server};SERVER=$onbaseServer;DATABASE=$onbaseDatabase;User Id=onbase_db_readonly;Password=p0exV3XanGknDfFnBvMe;"
+    $onbaseConnString = "Server=$onbaseServer;Database=$onbaseDatabase;User Id=onbase_db_readonly;Password=p0exV3XanGknDfFnBvMe;"
+
+
+    WriteLog "Connection String: $erpConnString"
 
     # Open database connections
     $erpConnection = New-Object System.Data.Odbc.OdbcConnection($erpConnString)
     $erpConnection.Open()
     WriteLog "Connected to ERP database"
 
-    $onbaseConnection = New-Object System.Data.Odbc.OdbcConnection($onbaseConnString)
-    $onbaseConnection.ConnectionTimeout = 60
+    $onbaseConnection = New-Object System.Data.SqlClient.SqlConnection($onbaseConnString)
     $onbaseConnection.Open()
     WriteLog "Connected to OnBase database"
 
