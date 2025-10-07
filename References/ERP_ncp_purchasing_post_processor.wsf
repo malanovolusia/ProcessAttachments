@@ -1,0 +1,2143 @@
+<job id="PDI_script">
+   <script language="VBScript" src="\\erp311script\Library\VBS\ERP_mod_constants.vbs"/>
+   <script language="VBScript" src="\\erp311script\Library\VBS\ERP_mod_logging.vbs"/>
+   <script language="VBScript" src="\\erp311script\Library\VBS\ERP_mod_wmi.vbs"/>
+   <script language="VBScript" src="\\erp311script\Library\VBS\ERP_mod_database.vbs"/>
+   <script language="VBScript" src="\\erp311script\Library\VBS\ERP_mod_file.vbs"/>
+   <script language="VBScript" src="\\erp311script\Library\VBS\ERP_mod_notify.vbs"/>
+   <script language="VBScript" src="\\erp311script\Library\VBS\ERP_mod_datetime.vbs"/>
+   <script language="VBScript" src="\\erp311script\Library\VBS\ERP_mod_util.vbs"/>
+   <script language="VBScript" src="\\erp311script\Library\VBS\ERP_mod_string.vbs"/>
+   <script language="VBScript" src="\\erp311script\Library\VBS\ERP_mod_print.vbs"/>
+   <script language="VBScript" src="\\erp311script\Library\VBS\ERP_mod_hrm.vbs"/>
+   <script language="VBScript" src="\\erp311script\Library\VBS\ERP_mod_fin.vbs"/>
+   <script language="VBScript" src="\\erp311script\Library\VBS\ERP_mod_env.vbs"/>
+   <script language="VBScript" src="\\erp311script\Library\VBS\ERP_mod_exec.vbs"/>
+   <script language="VBScript" src="\\erp311script\Library\VBS\ERP_mod_interface.vbs"/>
+   <script language="VBScript">
+
+    Dim logname, logpath, retValue, strSourcePath, strTargetPath, strSourceFile
+    Dim objFSO, objShell, objFolder, objFileCol, objInFile, objOutFile, objOutFileJSON_RC
+    Dim objOutFileJSON_PR, strSourceJSONFile, strTempJSONFile, objInFileJSON, objOutFileJSON
+    Dim objFile, objConn, objConnPROD, objRS, objRS1, objConnOnBase, strConnection, strConnectionOnBase
+    Dim strStagingPaths(2), strOutputPaths(2), strWatchedPath, retValueScript
+    Dim  bTimeout, i, j, d, strData, strSQL, strSQL1, strCOMM_TAG, strDOC_COMM
+    Dim intFileCounter, strFileCountExt, strOutputBasePath, bCreateRCDIP, strPreFix, strPDFFilename, strTempFile
+    Dim objOutFileDIP, objOutFileDIP_RC, intDocCount, bCreateRC, bCreatePR, strLine, strLine_RC, strLine_PR
+    Dim intPOattachCount, intMAattachCount, intDOattachCount, intRQattachCount, strLineItemDescriptions, strCommodityCodes
+    Dim strHeightTag, strCopyText, strOutputFile, intMax, strHeightCurr, strHeightNext, strConnectionPROD, strDOC_DSCR
+    Dim intPOattachTotal, intMAattachTotal, intDOattachTotal, intRQattachTotal, strDSCR_EXT, strPRCU_ID, strCOMM_CD
+    Dim objOutFileDIP_PO_att, objOutFileDIP_DO_att, objOutFileDIP_MA_att, objOutFileDIP_RQ_att
+    Dim objOutFileDIP_PO_idx, objOutFileDIP_DO_idx, objOutFileDIP_MA_idx, objOutFileDIP_RQ_idx
+    Dim strVEND_CUST_CD, strLGL_NM, strDOC_REC_DT_DC_FRMT, strDOC_CREA_USID, strRQSTR_ID, strISSR_ID, strDOC_ACTU_AM, strBRD_AWD_NO
+    Dim strDOC_ID, strDOC_CD, strDOC_DEPT_CD, strDOC_VERS_NO, strOBJ_ATT_UNID_LIST, strOBJ_ATT_PG_UNID, strEFBGN_DT_FRMT, strEFEND_DT_FRMT 
+    Dim strRF_DOC_CD, strRF_DOC_ID, strRF_DOC_DEPT_CD, strRF_DOC_VERS_NO, strRF_OBJ_ATT_PG_UNID, strOBJ_ATT_UNID, strAGREE_DOC_ID
+    Dim objCommodityCodes, objLineDesc, objStringWidths, strPROC_DT, strLoadFolder, intCPL, strSUPPRESS_CONFIRMATION_ONLY, strSID, strPRINT_SERVER
+    Dim bA10Processing, bCheckDuplicateAttachments
+        
+    Const BIRT_TIME_OUT                        = 720   '(= Minutes * 12)
+    Const LINE_HEIGHT_INCHES                   = 0.16
+    Const MAX_SINGLE_LINE_ITEM_HEIGHT_PO       = 5.23
+    Const MAX_SINGLE_LINE_ITEM_HEIGHT_DO       = 4.25
+    Const MAX_SINGLE_LINE_ITEM_HEIGHT_MA       = 4.00
+    Const MAX_CHAR_PER_LINE_PO                 = 40    'reduce this number if there is truncation (58 is calculated number, 40 is max all UPPERCASE)
+    Const MAX_CHAR_PER_LINE_DO                 = 35    'reduce this number if there is truncation (48 is calculated number, 35 is max all UPPERCASE)
+    Const MAX_CHAR_PER_LINE_MA                 = 66    'reduce this number if there is truncation (81 is calculated number, 66 is max all UPPERCASE)
+    Const MAX_PIXEL_WIDTH_PO                   = 323
+    Const MAX_PIXEL_WIDTH_DO                   = 275
+    Const MAX_PIXEL_WIDTH_MA                   = 457
+  
+    bA10Processing = False
+    bCheckDuplicateAttachments = True
+  
+    If Date() >= DateValue("01/05/2021") Then
+      bA10Processing = True
+    End If
+    
+
+    'Goto GetRowHeight
+    'Goto OnBaseAttachmentIDFound
+    
+    retValueScript         = 1
+
+    '***** PurchasingPostProcessor - jlongworth
+    
+    '*********************************************************************************************************
+    logpath               = SlashPath(logpath)
+    logname               = logpath & "SCRIPT " & scriptname & ".log"
+    logname               = Replace(logname, " ", "_")
+    
+    UsePass "oper2"
+    LogHeader
+    
+    If bA10Processing Then
+      WriteLog("*** Amendment 10 processing enabled ***")
+    End If
+    
+    strSUPPRESS_CONFIRMATION_ONLY = "NO"
+    
+
+    
+    Set strArgs = WScript.Arguments
+    intArgCount = strArgs.Count
+    If IsNull(intArgCount) or IsEmpty(intArgCount) Then
+      intArgCount = 0
+    End If
+    If intArgCount = 2 Then
+      strSUPPRESS_CONFIRMATION_ONLY = Trim(UCase(strArgs(0)))
+      strSID                        = Trim(UCase(strArgs(1)))
+    Else
+      WriteLog("Insufficient arguments supplied to script.")
+      WScript.Quit(1)
+    End If
+    Set strArgs = Nothing
+
+    WriteLog("SUPPRESS_CONFIRMATION_ONLY: " & strSUPPRESS_CONFIRMATION_ONLY)  
+    
+
+    Set objFSO            = CreateObject("Scripting.FileSystemObject")
+    Set objConn           = CreateObject("ADODB.Connection")
+    Set objConnPROD       = CreateObject("ADODB.Connection")
+    Set objConnOnBase     = CreateObject("ADODB.Connection")
+    Set objShell          = WScript.CreateObject("WScript.Shell")
+    Set objCommodityCodes = CreateObject("Scripting.Dictionary")
+    Set objLineDesc       = CreateObject("Scripting.Dictionary")
+    Set objStringWidths   = CreateObject("Scripting.Dictionary")
+    
+    strPROC_DT            = PadString(Month(Now()), 2, "R", "0") & "/" &_
+                             PadString(Day(Now()), 2, "R", "0") & "/" & Year(Now())
+                            
+    strLoadFolder         = GetLoadFolder()                        
+                            
+    WriteLog("NCP FOLDER: " & strLoadFolder)                            
+                            
+    retValue              = LoadFontWidthTable()
+    
+  
+    '**** the reason we are pointing to production for testing for attachments instead of PARA is because PARA doesn't have the STATIC attachment table copied over on nightly refresh.
+    strConnection          = GetOracleConnectString(strSID, "PDI_USER", False)
+    
+    Select Case Trim(UCase(strSID))
+      Case "ERP19PRO"
+        strPRINT_SERVER = "dlerp311birt"
+      Case Else
+        strPRINT_SERVER = "erp311printtest"
+    End Select
+    
+    
+    WriteLog("Print Server: " & strPRINT_SERVER)
+    
+    '**** Prod = OnBase
+    '**** Test = OB15TEST
+    
+    strConnectionOnBase    = "DRIVER={SQL Server};SERVER=obdbprod;DATABASE=OnBase;User Id=onbase_db_readonly;Password=p0exV3XanGknDfFnBvMe;"
+
+    strWatchedPath         = "\\" & strPRINT_SERVER & "\ProcessingCenter\GenEmailPaystub\input\"
+    retValue            = ClearDirectoryContents(strWatchedPath)
+    If retValue = 1 Then
+      WriteLog("ClearDirectoryContents() failed on path " & strWatchedPath)
+      WScript.Quit(12)
+    End If    
+    
+    
+    
+
+    strStagingPaths(0)     = "\\" & strPRINT_SERVER & "\ProcessingCenter\Main\staging\DO\"
+    strStagingPaths(1)     = "\\" & strPRINT_SERVER & "\ProcessingCenter\Main\staging\PO\"
+    strStagingPaths(2)     = "\\" & strPRINT_SERVER & "\ProcessingCenter\Main\staging\MA\"
+    
+    '*** Copy unprocessed xml from Advantage to staging paths **********************
+    For j = 0 To 2
+    
+      retValue            = ClearDirectoryContents(strStagingPaths(j))
+      If retValue = 1 Then
+        WriteLog("ClearDirectoryContents() failed on path " & strStagingPaths(j))
+        WScript.Quit(12)
+      End If
+      
+      If objFSO.FolderExists(strStagingPaths(j) & "RC") Then
+        retValue            = ClearDirectoryContents(strStagingPaths(j) & "RC")
+        If retValue = 1 Then
+          WriteLog("ClearDirectoryContents() failed on path " & strStagingPaths(j) & "RC")
+          WScript.Quit(12)
+        End If
+      End If
+      
+      If objFSO.FolderExists(strStagingPaths(j) & "ToPrint") Then
+        retValue            = ClearDirectoryContents(strStagingPaths(j) & "ToPrint")
+        If retValue = 1 Then
+          WriteLog("ClearDirectoryContents() failed on path " & strStagingPaths(j) & "ToPrint")
+          WScript.Quit(12)
+        End If
+      End If
+      
+      retValue            = CopyDirectoryContents(strStagingPaths(j) & "FromADV\", strStagingPaths(j))
+      If retValue = 1 Then
+        WriteLog("CopyDirectoryContents() failed")
+        WScript.Quit(12)
+      End If      
+    
+    Next
+    
+    strOutputBasePath     = "\\" & strPRINT_SERVER & "\ProcessingCenter\Main\output\JETPDF\"
+    strOutputPaths(0)     = strOutputBasePath & "DO\"
+    strOutputPaths(1)     = strOutputBasePath & "PO\"
+    strOutputPaths(2)     = strOutputBasePath & "MA\"
+    
+    '*** Clear existing output in target directories *******************************
+    For j = 0 To 2
+      
+      retValue            = ClearDirectoryContents(strOutputPaths(j))
+      
+      If retValue = 1 Then
+        WriteLog("ClearDirectoryContents() failed - a PDF is probably open in " & strOutputPaths(j))
+        WScript.Quit(12)
+      End If
+      
+      retValue            = ClearDirectoryContents(strOutputPaths(j) & "attachments")
+      If retValue = 1 Then
+        WriteLog("ClearDirectoryContents() failed - a PDF is probably open in " & strOutputPaths(j) & "attachments")
+        WScript.Quit(12)
+      End If
+      
+      If objFSO.FolderExists(strOutputPaths(j) & "RC") Then  
+        retValue            = ClearDirectoryContents(strOutputPaths(j) & "RC")
+        If retValue = 1 Then
+          WriteLog("ClearDirectoryContents() failed - a PDF is probably open in " & strOutputPaths(j) & "RC")
+          WScript.Quit(12)
+        End If
+      End If
+      
+      If objFSO.FolderExists(strOutputPaths(j) & "ToPrint") Then  
+        retValue            = ClearDirectoryContents(strOutputPaths(j) & "ToPrint")
+        If retValue = 1 Then
+          WriteLog("ClearDirectoryContents() failed - a PDF is probably open in " & strOutputPaths(j) & "ToPrint")
+          WScript.Quit(12)
+        End If
+      End If
+      
+    Next          
+          
+    retValue            = ClearDirectoryContents(strOutputBasePath & "RQ\attachments")
+    If retValue = 1 Then
+      WriteLog("ClearDirectoryContents() failed - a PDF is probably open in " & strOutputBasePath & "RQ\attachments")
+      WScript.Quit(12)
+    End If
+    
+    retValue            = ClearDirectoryContents("\\" & strPRINT_SERVER & "\ProcessingCenter\Main\onbase\PUR_OnBase_DIP_Import")
+    If retValue = 1 Then
+      WriteLog("ClearDirectoryContents() failed")
+      WScript.Quit(12)
+    End If  
+      
+        
+    '** Connect to ERP and OnBase databases **************************************************************************************    
+    On Error Resume Next
+    objConn.Open strConnection
+    If Err.Number <> 0 Then
+      WriteLog(Err.Description)
+      WScript.Quit(12)
+    End if
+    
+    objConnOnBase.ConnectionTimeout      =  60
+    objConnOnBase.Open strConnectionOnBase
+    If Err.Number <> 0 Then
+      WriteLog(Err.Description)
+      WScript.Quit(12)
+    End if    
+    objConnOnBase.CommandTimeout        =  120    
+    On Error Goto 0
+
+    '*** Open attachment DIP files **********************************************************************************************
+    Set objOutFileDIP_PO_att  = objFSO.OpenTextFile(strOutputBasePath & "PO\attachments\!PO_attachment_indexes_DIP.txt" , 2, True)
+    WriteAttachmentHeaderDIP objOutFileDIP_PO_att  
+
+    Set objOutFileDIP_DO_att  = objFSO.OpenTextFile(strOutputBasePath & "DO\attachments\!DO_attachment_indexes_DIP.txt" , 2, True)
+    WriteAttachmentHeaderDIP objOutFileDIP_DO_att  
+
+    Set objOutFileDIP_MA_att  = objFSO.OpenTextFile(strOutputBasePath & "MA\attachments\!MA_attachment_indexes_DIP.txt" , 2, True)
+    WriteAttachmentHeaderDIP objOutFileDIP_MA_att  
+
+    Set objOutFileDIP_RQ_att  = objFSO.OpenTextFile(strOutputBasePath & "RQ\attachments\!RQ_attachment_indexes_DIP.txt" , 2, True)
+    WriteAttachmentHeaderDIP objOutFileDIP_RQ_att      
+    
+    '*** Open index files **********************************************************************************************
+    Set objOutFileDIP_PO_idx  = objFSO.OpenTextFile(strOutputBasePath & "PO\attachments\!PO_indexes.txt" , 2, True)
+    WriteHeaderIDX objOutFileDIP_PO_idx  
+
+    Set objOutFileDIP_DO_idx  = objFSO.OpenTextFile(strOutputBasePath & "DO\attachments\!DO_indexes.txt" , 2, True)
+    WriteHeaderIDX objOutFileDIP_DO_idx
+
+    Set objOutFileDIP_MA_idx  = objFSO.OpenTextFile(strOutputBasePath & "MA\attachments\!MA_indexes.txt" , 2, True)
+    WriteHeaderIDX objOutFileDIP_MA_idx  
+
+    Set objOutFileDIP_RQ_idx  = objFSO.OpenTextFile(strOutputBasePath & "RQ\attachments\!RQ_indexes.txt" , 2, True)
+    WriteHeaderIDX objOutFileDIP_RQ_idx
+    
+    intPOattachCount          = 0
+    intMAattachCount          = 0
+    intDOattachCount          = 0
+    intRQattachCount          = 0
+    intPOattachTotal          = 0
+    intMAattachTotal          = 0
+    intDOattachTotal          = 0
+    intRQattachTotal          = 0    
+    
+
+    '*** Main process loop *******************************************************************************************************
+    '*** j(0) = DO
+    '*** j(1) = PO
+    '*** j(2) = MA
+    
+    For j = 0 To 2
+     
+      WriteLog("BEGIN PROCESSING (j=" & j &")")
+    
+      bTimeout            = WaitForBIRT(BIRT_TIME_OUT, strWatchedPath)
+      If bTimeout Then
+        WriteLog("Files exist in watched folder " & strWatchedPath & " Exiting.")
+        retValueScript = 12
+        Exit For
+      End If
+    
+      strSourcePath           = strStagingPaths(j)
+      strTargetPath           = strStagingPaths(j)
+    
+      Set objFolder           = objFSO.GetFolder(strSourcePath)
+      Set objFileCol          = objFolder.Files
+        
+      strFileCountExt         = ""  
+      intFileCounter          = 0
+        
+      WriteLog("Processing " & strSourcePath & " : (" & objFileCol.Count & " Files) - (" & (objFileCol.Count / 2) & " Documents)...")  
+        
+      '*** open DIP file depending on current path **********************************************************************************
+      bCreateRCDIP       = False
+      strPreFix          = Replace(Right(strOutputPaths(j), 3), "\", "")
+      Set objOutFileDIP  = objFSO.OpenTextFile(strOutputPaths(j) & strPreFix & "_DIP.txt" , 2, True)
+      WriteHeaderDIP objOutFileDIP
+      '*** also open associated RC DIP file for the following document types ********************************************************
+      Select Case strPreFix
+        Case "DO", "PO"
+          Set objOutFileDIP_RC  = objFSO.OpenTextFile(strOutputPaths(j) & "RC\RC_" & strPreFix & "_DIP.txt" , 2, True)
+          WriteHeaderDIP objOutFileDIP_RC
+          bCreateRCDIP = True
+      End Select
+
+      intDocCount             = 0  
+      strDOC_CD               = ""  
+        
+      '*** Walk through files in source path ***************************************************************************************  
+      For Each objFile In objFileCol
+        
+        strSourceFile       = LCase(objFile.Name)
+                  
+        If Right(strSourceFile, 3) = "xml" Then
+        
+          intDocCount         = intDocCount + 1
+        
+          strTempFile         = Replace(strSourceFile, ".xml", ".tmp")
+          strSourceJSONFile   = Replace(strSourceFile, ".xml", "_instr.json")  
+          strTempJSONFile     = Replace(strSourceJSONFile, ".json", ".tmp")  
+          
+          intFileCounter      = intFileCounter + 1
+          strFileCountExt     = "_(" & PadString(intFileCounter, "4", "R", "0") & ")"
+          
+          '*** Rename source xml to .tmp ************************************************************************************************************************
+          objFSO.MoveFile strSourcePath & strSourceFile, strSourcePath & strTempFile
+                  
+          Set objInFile         = objFSO.OpenTextFile(strSourcePath & strTempFile, 1, False)
+          strData               = objInFile.ReadAll
+          
+          '*** GENERAL CLEAN UP (PO, DO output only - MAs are generated by SysManUtil and don't need special handling) ******************************************
+          '* NOTE: When there is no FRMTRAN data defined in FIN for the PRINT_JOB_CD, the XML will output clean as if exported by SysManUtil 
+          '* however currently the PO & DO BIRT forms are expecting XML that have FRMTRAN data defined in FIN.
+          '* If j <> 2 Then
+          '*  strData = CleanUpXML(strData)
+          '* End If                            
+          
+          '***Get document data elements  ***********************************************************************************************************************
+          strDOC_ID             = Trim(GetXMLElementData("DOC_ID", strData))
+          strDOC_CD             = Trim(GetXMLElementData("DOC_CD", strData))
+          strDOC_DEPT_CD        = Trim(GetXMLElementData("DOC_DEPT_CD", strData))  
+          strDOC_VERS_NO        = Trim(GetXMLElementData("DOC_VERS_NO", strData))
+          strDOC_REC_DT_DC_FRMT = Trim(GetXMLElementData("DOC_REC_DT_DC_FRMT", strData))
+          strDOC_DSCR           = NoNull(Trim(GetXMLElementData("DOC_DSCR", strData)))
+          strPRCU_ID            = Trim(GetXMLElementData("PRCU_ID", strData))
+          strVEND_CUST_CD       = Trim(GetXMLElementData("VEND_CUST_CD", strData))
+          strLGL_NM             = Trim(GetXMLElementData("LGL_NM", strData))
+          strDOC_ACTU_AM        = Trim(GetXMLElementData("DOC_ACTU_AM", strData))
+          strEFBGN_DT_FRMT      = Trim(GetXMLElementData("EFBGN_DT_FRMT", strData))
+          strEFEND_DT_FRMT      = Trim(GetXMLElementData("EFEND_DT_FRMT", strData))
+          strBRD_AWD_NO         = Trim(GetXMLElementData("BRD_AWD_NO", strData))
+          strAGREE_DOC_ID       = Trim(GetXMLElementData("AGREE_DOC_ID", strData))
+          strDOC_DSCR           = Replace(strDOC_DSCR, vbCRLF, " ")
+        
+          strDOC_CREA_USID      = ""      
+          strRQSTR_ID           = ""
+          strISSR_ID            = ""
+          strOBJ_ATT_UNID_LIST  = ""      
+          bCreateRC             = False
+          bCreatePR             = False
+          strPDFfilename        = strDOC_CD & "_PDF_" & strDOC_ID & ".pdf"
+          
+          Select Case strDOC_CD
+            Case "PO", "DO"
+                          
+              strSQL    = "SELECT DOC_CREA_USID, RQSTR_ID, ISSR_ID, OBJ_ATT_PG_UNID, OBJ_ATT_PG_TOT " &_
+                          "FROM O_FINPROD.PO_DOC_HDR " &_
+                          "WHERE DOC_CD='" & strDOC_CD & "' " &_
+                          "AND DOC_ID='" & strDOC_ID & "' " &_
+                          "AND DOC_DEPT_CD='" & strDOC_DEPT_CD & "' " &_
+                          "AND DOC_VERS_NO='" & strDOC_VERS_NO & "'"            
+
+              WriteLog("Retrieving attachments for " & PadString(strDOC_CD, 3, "R", " ") & " " & strDOC_DEPT_CD & " " & strDOC_ID & " - " & strDOC_VERS_NO)
+              
+              Set objRS = objConn.Execute(strSQL)
+              Do While Not objRS.EOF
+                strDOC_CREA_USID     = NoNull(Trim(objRS.Fields("DOC_CREA_USID").Value))
+                strRQSTR_ID          = NoNull(Trim(objRS.Fields("RQSTR_ID").Value))
+                strISSR_ID           = NoNull(Trim(objRS.Fields("ISSR_ID").Value))
+                strOBJ_ATT_PG_UNID  = Trim(objRS.Fields("OBJ_ATT_PG_UNID").Value)
+                
+                '*** Retrieve attachments **************************************************************************************************************
+                retValue             = GetAttachments("PO", _
+                                                     "", _
+                                                     strDOC_CD, _
+                                                     strDOC_DEPT_CD, _
+                                                     strDOC_ID, _
+                                                     strDOC_VERS_NO, _
+                                                     strOutputPaths(j) & "attachments\", _
+                                                     strOBJ_ATT_PG_UNID, _
+                                                     strVEND_CUST_CD, _
+                                                     strLGL_NM, _
+                                                     strDOC_REC_DT_DC_FRMT)
+                                                     
+                If strDOC_CD = "PO" Then
+                
+                   '*** get associated RQ attachments **************************************************************************************************************
+                   WriteLog("Retrieving RQS attachments for " & PadString(strDOC_CD, 3, "R", " ") & " " & strDOC_DEPT_CD & " " & strDOC_ID & " - " & strDOC_VERS_NO)
+                   
+                   strSQL1 = "SELECT DISTINCT " &_
+                             " B.OBJ_ATT_PG_UNID AS RF_OBJ_ATT_PG_UNID, " &_
+                             " A.RF_DOC_CD, " &_
+                             " A.RF_DOC_DEPT_CD, " &_
+                             " A.RF_DOC_ID, " &_
+                             " A.RF_DOC_VERS_NO " &_
+                             "FROM O_FINPROD.R_DOC_RF A, " &_
+                             " O_FINPROD.RQ_DOC_HDR B, " &_
+                             " O_FINPROD.PO_DOC_HDR D " &_
+                             "WHERE A.DOC_CD        = 'PO' " &_
+                             "AND A.RF_DOC_CD       = 'RQS' " &_
+                             "AND D.DOC_ID          = '" & strDOC_ID & "' " &_
+                             "AND D.DOC_DEPT_CD     = " & strDOC_DEPT_CD & " " &_
+                             "AND D.DOC_VERS_NO     = 1 " &_         
+                             "AND D.DOC_CD          = A.DOC_CD " &_
+                             "AND D.DOC_DEPT_CD     = A.DOC_DEPT_CD " &_
+                             "AND D.DOC_ID          = A.DOC_ID " &_
+                             "AND D.DOC_VERS_NO     = A.DOC_VERS_NO " &_
+                             "AND B.DOC_CD          = A.RF_DOC_CD " &_
+                             "AND B.DOC_DEPT_CD     = A.RF_DOC_DEPT_CD " &_
+                             "AND B.DOC_ID          = A.RF_DOC_ID " &_
+                             "AND B.DOC_VERS_NO     = A.RF_DOC_VERS_NO"
+                    
+                   '(always retrieve the first version of PO to get past RQS (higher versions of PO may not retrieve a RQS)  
+                    
+                   WriteLog("RQS retrieval SQL: " & strSQL1)
+                   
+                   '***** Alternate SQL
+                   '******* strSQL1 = "SELECT " &_
+                   '*******           " B.OBJ_ATT_PG_UNID AS RF_OBJ_ATT_PG_UNID, " &_
+                   '*******           " A.RF_DOC_CD, " &_
+                   '*******           " A.RF_DOC_DEPT_CD, " &_
+                   '*******           " A.RF_DOC_ID, " &_
+                   '*******           "FROM PO_DOC_COMM A, RQ_DOC_HDR B" &_
+                   '*******           "WHERE A.DOC_CD        = 'PO' " &_
+                   '*******           "AND A.DOC_ID          = '" & strDOC_ID & "' " &_
+                   '*******           "AND A.DOC_DEPT_CD     = " & strDOC_DEPT_CD & " " &_
+                   '*******           "AND A.DOC_VERS_NO     = " & strDOC_VERS_NO & " " &_
+                   '*******           "AND B.DOC_CD          = A.RF_DOC_CD " &_
+                   '*******           "AND B.DOC_DEPT_CD     = A.RF_DOC_DEPT_CD " &_
+                   '*******           "AND B.DOC_ID          = A.RF_DOC_ID"
+                
+                    
+                    
+                    intRQScount = 0
+                    
+                    Set objRS1 = objConn.Execute(strSQL1)
+                    Do While Not objRS1.EOF
+                      intRQScount                 = intRQScount + 1
+                  
+                      strRF_DOC_CD                 = objRS1.Fields("RF_DOC_CD").Value
+                      strRF_DOC_ID                 = objRS1.Fields("RF_DOC_ID").Value
+                      strRF_DOC_DEPT_CD           = objRS1.Fields("RF_DOC_DEPT_CD").Value
+                      strRF_DOC_VERS_NO           = objRS1.Fields("RF_DOC_VERS_NO").Value
+                      strRF_OBJ_ATT_PG_UNID       = objRS1.Fields("RF_OBJ_ATT_PG_UNID").Value
+
+                      WriteLog("RQS document: " & strRF_DOC_CD & " " & strRF_DOC_DEPT_CD & " " & strRF_DOC_ID & " " & strRF_DOC_VERS_NO)
+                      
+                      '*** Retrieve attachments **************************************************************************************************************
+                      retValue                     = GetAttachments("RQ", _
+                                                                   strDOC_ID, _
+                                                                   strRF_DOC_CD, _
+                                                                   strRF_DOC_DEPT_CD, _
+                                                                   strRF_DOC_ID, _
+                                                                   strRF_DOC_VERS_NO, _
+                                                                   strOutputBasePath & "RQ\attachments\", _
+                                                                   strRF_OBJ_ATT_PG_UNID, _
+                                                                   strVEND_CUST_CD, _
+                                                                   strLGL_NM, _
+                                                                   strDOC_REC_DT_DC_FRMT)                  
+                      objRS1.MoveNext
+                    Loop
+                    objRS1.Close
+                    
+                    If intRQScount = 0 Then
+                      WriteLog("RQS Document not found for : " & PadString(strDOC_CD, 3, "R", " ") & " " & strDOC_DEPT_CD & " " & strDOC_ID & " - " & strDOC_VERS_NO)
+                    End If
+                    
+                End If                
+                objRS.MoveNext
+              Loop
+              objRS.Close            
+          
+              strCOMM_TAG             = "PO_DOC_COMM"          
+              strDOC_COMM             = Split(strData, "<" & strCOMM_TAG)          
+                      
+              Set objOutFileJSON_RC   = objFSO.OpenTextFile(strSourcePath & "RC\r" & strSourceJSONFile, 2, True)
+              bCreateRC               = True
+              
+              '*** POs are printed in the morning, so create additional JSON file for printing *********************************      
+              If strDOC_CD = "PO" Then
+                Set objOutFileJSON_PR   = objFSO.OpenTextFile(strSourcePath & "ToPrint\" & strSourceJSONFile, 2, True)
+                bCreatePR = True
+              End If
+              
+            Case "MA"
+            
+              strCOMM_TAG             = "MA_DOC_COMM"          
+              strDOC_COMM             = Split(strData, "<" & strCOMM_TAG)
+              
+              strSQL    = "SELECT OBJ_ATT_PG_UNID, OBJ_ATT_PG_TOT " &_
+                          "FROM O_FINPROD.MA_DOC_HDR " &_
+                          "WHERE DOC_CD='" & strDOC_CD & "' " &_
+                          "AND DOC_ID='" & strDOC_ID & "' " &_
+                          "AND DOC_DEPT_CD='" & strDOC_DEPT_CD & "' " &_
+                          "AND DOC_VERS_NO='" & strDOC_VERS_NO & "'"            
+              
+              Set objRS = objConn.Execute(strSQL)
+              Do While Not objRS.EOF
+                strOBJ_ATT_PG_UNID  = Trim(objRS.Fields("OBJ_ATT_PG_UNID").Value)
+                
+                '*** Retrieve attachments **************************************************************************************************************
+                retValue             = GetAttachments("MA", _
+                                                     "", _
+                                                     strDOC_CD, _
+                                                     strDOC_DEPT_CD, _
+                                                     strDOC_ID, _
+                                                     strDOC_VERS_NO, _
+                                                     strOutputPaths(j) & "attachments\", _
+                                                     strOBJ_ATT_PG_UNID, _
+                                                     strVEND_CUST_CD, _
+                                                     strLGL_NM, _
+                                                     strDOC_REC_DT_DC_FRMT)
+                objRS.MoveNext
+              Loop
+              objRS.Close              
+
+          End Select
+          
+          '*** Modify Existing JSON (print instructions file) Rename original with .tmp extention and use for input file, then write out to original as output file          
+          objFSO.MoveFile strSourcePath & strSourceJSONFile, strSourcePath & strTempJSONFile
+          
+          Set objInFileJSON       = objFSO.OpenTextFile(strSourcePath & strTempJSONFile, 1, False)
+          Set objOutFileJSON       = objFSO.OpenTextFile(strSourcePath & strSourceJSONFile, 2, True)        
+          
+          Do While Not objInFileJSON.AtEndOfStream
+            strLine     = objInFileJSON.ReadLine
+            strLine_RC  = strLine
+            strLine_PR  = strLine
+          
+  
+            '*** filter out the following lines for ADV 3.11
+            bWriteToFile = True
+  
+            '** Replace exiting lines with substituted values  ******************************************************************************************************          
+            If InStr(1, strLine, Chr(34) & "outputFile" & Chr(34)) Then
+              strLine     = "  " & Chr(34) & "outputFile" & Chr(34) & " : " & Chr(34) & strDOC_CD & "_PDF_" & Replace(strDOC_ID, " ", "_") & strFileCountExt & ".pdf" & Chr(34) & ","
+              strLine_RC   = "  " & Chr(34) & "outputFile" & Chr(34) & " : " & Chr(34) & "RC_" & strDOC_CD & "_" & Replace(strDOC_ID, " ", "_") & strFileCountExt & ".pdf" & Chr(34) & ","
+              strLine_PR   = "  " & Chr(34) & "outputFile" & Chr(34) & " : " & Chr(34) & strDOC_CD & "_PDF_" & Replace(strDOC_ID, " ", "_") & strFileCountExt & ".pdf" & Chr(34) & ","
+              
+            ElseIf InStr(1, strLine, Chr(34) & "outputType" & Chr(34)) Then
+              strLine     = "  " & Chr(34) & "outputType" & Chr(34) & " : " & Chr(34) & "PDF" & Chr(34) & ","
+              strLine_RC   = "  " & Chr(34) & "outputType" & Chr(34) & " : " & Chr(34) & "PDF" & Chr(34) & ","
+            
+            ElseIf InStr(1, strLine, Chr(34) & "formName" & Chr(34)) Then  
+              
+              If bA10Processing Then
+                Select Case strDOC_DEPT_CD
+
+                  Case "040", "060", "805"
+                  
+                    strLine      = "  " & Chr(34) & "formName" & Chr(34) & " : " & Chr(34) & strDOC_CD & "_FORM_" & strDOC_DEPT_CD & ".rptdesign" & Chr(34) & ","
+                    strLine_PR   = "  " & Chr(34) & "formName" & Chr(34) & " : " & Chr(34) & strDOC_CD & "_FORM_" & strDOC_DEPT_CD & ".rptdesign" & Chr(34) & ","
+                    strLine_RC   = "  " & Chr(34) & "formName" & Chr(34) & " : " & Chr(34) & "RC_FORM_" & strDOC_DEPT_CD & ".rptdesign" & Chr(34) & ","
+                    '***strLine_RC   = "  " & Chr(34) & "formName" & Chr(34) & " : " & Chr(34) & "RC_FORM_NO_LOGO.rptdesign" & Chr(34) & ","
+ 
+                    WriteLog("USING A10 FORM FOR DOC_DEPT_CD: " & strDOC_DEPT_CD & " DOC_CD: " & strDOC_CD & " DOC_ID: " & strDOC_ID)
+                    
+                  Case Else
+                    strLine_RC   = "  " & Chr(34) & "formName" & Chr(34) & " : " & Chr(34) & "RC_FORM.rptdesign" & Chr(34) & ","
+                End Select               
+              Else
+                Select Case Trim(UCase(strPRINT_SERVER))
+                   Case "ERP311PRINTTEST"                   
+                      Select Case strDOC_DEPT_CD
+                        Case "040", "060", "805"
+                          strLine      = "  " & Chr(34) & "formName" & Chr(34) & " : " & Chr(34) & strDOC_CD & "_FORM_" & strDOC_DEPT_CD & ".rptdesign" & Chr(34) & ","
+                          strLine_PR   = "  " & Chr(34) & "formName" & Chr(34) & " : " & Chr(34) & strDOC_CD & "_FORM_" & strDOC_DEPT_CD & ".rptdesign" & Chr(34) & ","
+                          strLine_RC   = "  " & Chr(34) & "formName" & Chr(34) & " : " & Chr(34) & "RC_FORM_" & strDOC_DEPT_CD & ".rptdesign" & Chr(34) & ","
+                        Case Else
+                          strLine_RC   = "  " & Chr(34) & "formName" & Chr(34) & " : " & Chr(34) & "RC_FORM.rptdesign" & Chr(34) & ","
+                      End Select          
+                   Case Else                   
+                      strLine_RC   = "  " & Chr(34) & "formName" & Chr(34) & " : " & Chr(34) & "RC_FORM.rptdesign" & Chr(34) & ","
+                      
+                End Select
+              End If
+            ElseIf InStr(1, strLine, Chr(34) & "printerName" & Chr(34)) Then
+              strLine     = "  " & Chr(34) & "printerName" & Chr(34) & " : " & Chr(34) & "BIRT" & Chr(34) & ","  '<-- default to non-printing
+              strLine_RC  = "  " & Chr(34) & "printerName" & Chr(34) & " : " & Chr(34) & "BIRT" & Chr(34) & ","  '<-- default to non-printing
+              strLine_PR   = "  " & Chr(34) & "printerName" & Chr(34) & " : " & Chr(34) & "BIRT" & Chr(34) & ","  '<-- default to non-printing - Norma's script will update this to "PO_Printer" in the morning
+              
+            ElseIf InStr(1, strLine, Chr(34) & "outputFileWithPath" & Chr(34)) Then
+              strLine     = "  " & Chr(34) & "outputFileWithPath" & Chr(34) & " : " & Chr(34) &_
+                            "C:/CGIAPPS/AdvFormsModule/ProcessingCenter/Main/output/JETPDF/" & strDOC_CD & "\\" &_
+                            strDOC_CD & "_PDF_" & Replace(strDOC_ID, " ", "_") & strFileCountExt & ".pdf" & Chr(34) & ","
+              strLine_RC  = "  " & Chr(34) & "outputFileWithPath" & Chr(34) & " : " & Chr(34) &_
+                            "C:/CGIAPPS/AdvFormsModule/ProcessingCenter/Main/output/JETPDF/" & strDOC_CD & "/RC\\" &_
+                            "RC_" & strDOC_CD & "_" & Replace(strDOC_ID, " ", "_") & strFileCountExt & ".pdf" & Chr(34) & ","
+              strLine_PR  = "  " & Chr(34) & "outputFileWithPath" & Chr(34) & " : " & Chr(34) &_
+                            "C:/CGIAPPS/AdvFormsModule/ProcessingCenter/Main/output/JETPDF/" & strDOC_CD & "/ToPrint\\" &_
+                            strDOC_CD & "_PDF_" & Replace(strDOC_ID, " ", "_") & strFileCountExt & ".pdf" & Chr(34) & ","      
+                            
+            ElseIf InStr(1, strLine, Chr(34) & "outputFilePath" & Chr(34)) Then
+              strLine_RC  = "  " & Chr(34) & "outputFilePath" & Chr(34) & " : " & Chr(34) &_
+                            "C:/CGIAPPS/AdvFormsModule/ProcessingCenter/Main/output/JETPDF/" & strDOC_CD & "/RC" & Chr(34) & ","  
+              strLine_PR  = "  " & Chr(34) & "outputFilePath" & Chr(34) & " : " & Chr(34) &_
+                            "C:/CGIAPPS/AdvFormsModule/ProcessingCenter/Main/output/JETPDF/" & strDOC_CD & "/ToPrint" & Chr(34) & ","
+                        
+            Else
+            
+              '*** filter out the following lines for ADV 3.11
+
+              If InStr(1, strLine, "copyASelection") > 0 Or _
+                InStr(1, strLine, "copyBSelection") > 0 Or _
+                InStr(1, strLine, "copyCSelection") > 0 Or _
+                InStr(1, strLine, "copyDSelection") > 0 Or _
+                InStr(1, strLine, "copyESelection") > 0 Or _
+                InStr(1, strLine, "copy1Selection") > 0 Or _
+                InStr(1, strLine, "copy2Selection") > 0 Or _
+                InStr(1, strLine, "printInstructions") > 0 Or _
+                InStr(1, strLine, "formsPerPage") > 0 Or _
+                InStr(1, strLine, "envelopeSize") > 0 Or _
+                InStr(1, strLine, "multiPrintValue") Then
+                bWriteToFile = False
+              End If
+            
+            End If
+            
+            If bWriteToFile Then
+            
+              '*** Write out to JSON files **********************************************************************************************************************
+              If InStr(1, strLine, "}") Then   '<-- If end of file indicated by } Then Write instead of WriteLine (including CRLF causes hangup)
+                '*** Write to original JSON file ****************************************************************************************************************        
+                objOutFileJSON.Write(strLine)
+                '*** Write to RC JSON file **********************************************************************************************************************
+                If bCreateRC Then
+                  objOutFileJSON_RC.Write(strLine_RC)
+                End If
+                '*** Write to JSON file for PO printing *********************************************************************************************************
+                If bCreatePR Then
+                  objOutFileJSON_PR.Write(strLine_PR)
+                End If
+              Else
+                '*** Write to original JSON file ****************************************************************************************************************
+                objOutFileJSON.WriteLine(strLine)
+                '*** Write to RC JSON file **********************************************************************************************************************
+                If bCreateRC Then
+                  objOutFileJSON_RC.WriteLine(strLine_RC)
+                End If
+                '*** Write to JSON file for PO printing  *********************************************************************************************************          
+                If bCreatePR Then
+                  objOutFileJSON_PR.WriteLine(strLine_PR)
+                End If              
+              End If
+              
+            End If
+            
+          Loop
+          
+          objInFileJSON.Close
+          objOutFileJSON.Close
+          
+          If bCreateRC Then
+            objOutFileJSON_RC.Close
+          End If
+          
+          If bCreatePR Then
+            objOutFileJSON_PR.Close
+          End If
+          
+          objFSO.DeleteFile strSourcePath & strTempJSONFile        
+
+          '***** Get and set row heights based on length of DSCR_EXT data in the commodity line ************************************************
+          
+          '**** There will have to be TWO passes through this array
+          '*** 1.) To see if there are any line items that max out the height and need overflow array elements (blank commodity lines) inserted        
+          'If i <> 0 Then  
+            bSplit                        = SplitCommodityLines(strDOC_CD)
+          'End If
+        
+          '*** 2.) Use the newly created array from #1 below to write out to file as usual.
+
+          intMax                        = UBound(strDOC_COMM)
+      
+          strLineItemDescriptions       = ""
+          strCommodityCodes              = ""
+          objCommodityCodes.RemoveAll
+          objLineDesc.RemoveAll
+      
+          Set objOutFile          = objFSO.OpenTextFile(strTargetPath & strSourceFile, 2, True)
+
+          For i = 0 To intMax
+            
+            strHeightCurr         = "0"
+            strHeightNext         = "0"
+                        
+            If InStr(1, strDOC_COMM(i), "<COMM_CD ") > 0 Then
+              strCOMM_CD = Trim(Replace(Replace(GetXMLElementData("COMM_CD ", strDOC_COMM(i)), vbCRLF, " "), Chr(10), " "))
+              If Not objCommodityCodes.Exists(strCOMM_CD) And Len(strCOMM_CD) > 0 Then
+                objCommodityCodes.Add strCOMM_CD, strCOMM_CD
+                strCommodityCodes      = strCommodityCodes & "Commodity Code: " & strCOMM_CD & vbCRLF
+              End If
+            End If
+
+            If InStr(1, strDOC_COMM(i), "<COMM_CD_SPFN ") > 0 Then
+              strCOMM_CD = Trim(Replace(Replace(GetXMLElementData("COMM_CD_SPFN ", strDOC_COMM(i)), vbCRLF, " "), Chr(10), " "))
+              If Not objCommodityCodes.Exists(strCOMM_CD) And Len(strCOMM_CD) > 0 Then
+                objCommodityCodes.Add strCOMM_CD, strCOMM_CD
+                strCommodityCodes      = strCommodityCodes & "Commodity Code: " & strCOMM_CD & vbCRLF
+              End If
+            End If
+            
+            If InStr(1, strDOC_COMM(i), "<DSCR_EXT") > 0 Then
+
+              '*** 09/15/2017 BEGIN HURRICANE IRMA MODIFICATION *****************************************************************
+              '* Retrieve accounting information for this commodity line and append to description
+              '* only retrieve FUND_CD and if 194, append vbCRLF & "*** FUND 194 ***" to description (RC pdfs only)
+              '************************************************************************************************************
+              
+              '*** 10/03/2022 BEGIN HURRICANE IAN MODIFICATION *****************************************************************
+              '* Retrieve accounting information for this commodity line and append to description
+              '* only retrieve FUND_CD and if 198, append vbCRLF & "*** FUND 198 ***" to description (RC pdfs only)
+              '************************************************************************************************************
+              strDOC_COMM_LN_NO = Trim(GetXMLElementData("DOC_COMM_LN_NO", strDOC_COMM(i)))
+              
+              If strDOC_COMM_LN_NO <> "" And strDOC_COMM_LN_NO <> "0" Then
+              
+                             
+                strSQL =          "SELECT a.FUND_CD" & vbCRLF &_
+                                  "from o_finprod.PO_DOC_ACTG a" & vbCRLF &_
+                                  "where a.DOC_ID='" & strDOC_ID & "'" & vbCRLF &_
+                                  "and a.DOC_CD='" & strDOC_CD & "'" & vbCRLF &_
+                                  "and a.DOC_DEPT_CD=" & strDOC_DEPT_CD & vbCRLF &_
+                                  "and a.DOC_VERS_NO=" & strDOC_VERS_NO & vbCRLF &_
+                                  "and a.DOC_COMM_LN_NO=" & strDOC_COMM_LN_NO
+    
+                Set objRS_HURR  = objConn.Execute(strSQL)
+                
+                strDSCR_EXT_2   = " "
+                
+                Do While Not objRS_HURR.EOF
+                
+                  strFUND_CD = objRS_HURR.Fields("FUND_CD").Value
+                
+                  If strFUND_CD = "198" Then
+                    WriteLog("*** DOC_CD=" & strDOC_CD & " DOC_ID=" & strDOC_ID & " DOC_COMM_LN_NO=" & strDOC_COMM_LN_NO & " HURRICANE IAN FUND 198")
+                    strDSCR_EXT_2 = "*** FUND 198 ***"
+                    Exit Do
+                  End If
+                
+                  objRS_HURR.MoveNext
+                  
+                Loop          
+                
+                objRS_HURR.Close
+              
+              End If
+              
+              '******** END HURRICANE IRMA MODIFICATION ********************************************************************
+              
+              strDSCR_EXT               = ""
+              strDSCR_EXT               = Trim(Replace(GetXMLElementData("DSCR_EXT", strDOC_COMM(i)), vbCRLF, " "))
+                       
+              
+                       
+              
+              '*** Get the current row height based on length of commodity description (with returns in tact)
+              '*** Ignore getting the height of DSCR_EXT in element 0 (header)
+              If i > 0 Then
+                strHeightCurr             = GetRowHeight(Trim(GetXMLElementData("DSCR_EXT", strDOC_COMM(i))), strDOC_CD)
+              End If
+                
+              If Not objLineDesc.Exists(strDSCR_EXT) And Len(strDSCR_EXT) > 0 Then
+                objLineDesc.Add strDSCR_EXT, strDSCR_EXT
+                strLineItemDescriptions    = strLineItemDescriptions & "Line Description: " & Left(Replace(Replace(strDSCR_EXT, Chr(13) & Chr(10), ""), Chr(10), " "), 250) & vbCRLF
+              End If
+              '*** Get next row height if not at last element of array **********************************************************************
+              If (i < intMax) Then
+                If (InStr(1, strDOC_COMM(i + 1), "<DSCR_EXT") > 0) Then
+                  strHeightNext       = GetRowHeight(Trim(GetXMLElementData("DSCR_EXT", strDOC_COMM(i + 1))), strDOC_CD)
+                End If
+              End If
+              
+              
+              
+              If strDOC_COMM_LN_NO = "0" Then
+                strOVERFLOW_LINE = "YES"
+              Else
+                strOVERFLOW_LINE = "NO"
+              End If
+      
+              If strCOMM_TAG = "PO_DOC_COMM" Then
+                '*** POs and DOs *************************************************************************************************************
+                strHeightTag          = "   <CURR_ROW_HT Attribute=""Y""><![CDATA[" & strHeightCurr & "]]></CURR_ROW_HT>" & vbCRLF &_
+                                        "         <NEXT_ROW_HT Attribute=""Y""><![CDATA[" & strHeightNext & "]]></NEXT_ROW_HT>" & vbCRLF &_
+                                        "         <VC_OVERFLOW Attribute=""Y""><![CDATA[" & strOVERFLOW_LINE & "]]></VC_OVERFLOW>" & vbCRLF &_
+                                        "         <DSCR_EXT_2 Attribute=""Y""><![CDATA[" & strDSCR_EXT_2 & "]]></DSCR_EXT_2>" & vbCRLF &_
+                                        "      </" & strCOMM_TAG & ">"
+              Else
+                '*** MAs  ********************************************************************************************************************
+                strHeightTag          = "   <CURR_ROW_HT Attribute=""Y""><![CDATA[" & strHeightCurr & "]]></CURR_ROW_HT>" & vbCRLF &_
+                                        "         <NEXT_ROW_HT Attribute=""Y""><![CDATA[" & strHeightNext & "]]></NEXT_ROW_HT>" & vbCRLF &_
+                                        "         <VC_OVERFLOW Attribute=""Y""><![CDATA[" & strOVERFLOW_LINE & "]]></VC_OVERFLOW>" & vbCRLF &_
+                                        "      </" & strCOMM_TAG & ">"        
+          
+              End If
+                  
+              '*** If tags don't already exist then add **************************************************************************************                  
+              If InStr(1, strDOC_COMM(i), "CURR_ROW_HT") = 0 And InStr(1, strDOC_COMM(i), "NEXT_ROW_HT") = 0 Then  
+                strDOC_COMM(i) = Replace(strDOC_COMM(i), "</" & strCOMM_TAG & ">", strHeightTag)
+                '*** additional clean up
+                strDOC_COMM(i) = Replace(strDOC_COMM(i), Chr(13) & Chr(13) & Chr(10), Chr(13) & Chr(10))
+              End IF
+            End If
+  
+            If (i = 0) Then
+              'Append any additional data in the header (element 0) by replacing the </PO_DOC_HDR> end tag with new data + </PO_DOC_HDR> ****
+              Select Case strDOC_CD
+                Case "PO", "DO"
+                  If InStr(1, strDOC_COMM(i), "VC_PRINT") = 0 Then
+                    strDOC_COMM(i) = Replace(strDOC_COMM(i), "</PO_DOC_HDR>", "   <VC_PRINT Attribute=""Y""><![CDATA[" & GetVCPrintFlag(strDOC_CD, strDOC_DEPT_CD, strDOC_ID, strDOC_VERS_NO) & "]]></VC_PRINT>" & vbCRLF &_
+                                                                              "      </PO_DOC_HDR>")
+                  End If
+              End Select 
+            End If
+            
+            
+            If InStr(1, strDOC_COMM(i), "</AMS_DOC_XML_EXPORT_FILE>") > 0 Then
+              objOutFile.Write(strDOC_COMM(i))
+            Else
+              objOutFile.Write(strDOC_COMM(i) & "<" & strCOMM_TAG)
+            End If
+            
+          Next
+        
+          objInFile.Close
+          objOutFile.Close
+        
+          objFSO.DeleteFile strSourcePath & strTempFile
+  
+          '*** Copy the .xml data to RC and ToPrint folders ************************************************************
+          Select Case strDOC_CD
+            Case "DO"
+            
+              For d = 1 To 2
+                If d = 1 Then
+                  strCopyText     = "Delivery Order"
+                  strPDFfilename  = strDOC_CD & "_PDF_" & Replace(strDOC_ID, " ", "_") & strFileCountExt & ".pdf"
+                  strOutputFile   = strOutputPaths(j) & strPDFfilename
+                Else
+                  strCopyText     = "Receiving"
+                  strPDFfilename  = "RC_" & strDOC_CD & "_" & Replace(strDOC_ID, " ", "_") & strFileCountExt & ".pdf"
+                  strOutputFile   = strOutputPaths(j) & "RC\" & strPDFfilename
+                End If
+              
+                strDocTypeName = "PUR - Delivery Orders"
+                If bA10Processing Then
+                  Select Case strDOC_DEPT_CD
+                    Case "040"
+                      strDocTypeName = "PUR - Delivery Orders - EL"
+                    Case "060"
+                      strDocTypeName = "PUR - Delivery Orders - PA"
+                    Case "805"
+                      strDocTypeName = "PUR - Delivery Orders - TC"
+                  End Select  
+                End If
+
+              
+                strData1 = "BEGIN:" & vbCRLF &_
+                          ">>Dummy Key: Original xml: " & strStagingPaths(j) & strSourceFile & vbCRLF &_
+                          ">>DocTypeName: " & strDocTypeName & vbCRLF &_
+                          ">>DocDate: " & strPROC_DT & vbCRLF &_
+                          "Advantage Doc Code: " & strDOC_CD & vbCRLF &_
+                          "Department #: " & strDOC_DEPT_CD & vbCRLF &_
+                          "Doc ID: " & strDOC_ID & vbCRLF &_
+                          "Version #: " & strDOC_VERS_NO & vbCRLF &_
+                          "Date: " & strDOC_REC_DT_DC_FRMT & vbCRLF &_
+                          "Amount: " & strDOC_ACTU_AM & vbCRLF &_
+                          "Vendor-Customer #: " & strVEND_CUST_CD & vbCRLF &_
+                          "Vendor Name: " & strLGL_NM & vbCRLF &_
+                          "Copy: " & strCopyText & vbCRLF &_
+                          "MA #: " & strAGREE_DOC_ID & vbCRLF &_
+                          "Description: " & Replace(strDOC_DSCR, Chr(10), " ") & vbCRLF &_
+                          strLineItemDescriptions &_
+                          "Document #: " & strDOC_ID & vbCRLF &_
+                          ">>Dummy Key: hidden keywords begin here" & vbCRLF &_
+                          "Procurement ID: " & strPRCU_ID & vbCRLF &_
+                          strCommodityCodes &_
+                          strOBJ_ATT_UNID_LIST &_
+                          "SHA-256: " & UCase(strPDFfilename) & vbCRLF &_
+                          ">>FileTypeNum: 16" & vbCRLF &_
+                          ">>FullPath: " & strOutputFile & vbCRLF
+              
+                If d = 1 Then
+                  objOutFileDIP.Write(strData1)
+                Else
+                  objOutFileDIP_RC.Write(strData1)
+                End If
+              Next
+              objFSO.CopyFile strSourcePath & strSourceFile, strSourcePath & "RC\r" & strSourceFile
+              If bCreatePR Then
+                objFSO.CopyFile strSourcePath & strSourceFile, strSourcePath & "ToPrint\" & strSourceFile
+              End If          
+          
+            Case "PO"
+
+              For d = 1 To 2
+                If d = 1 Then
+                  strCopyText     = "Vendor"
+                  strPDFfilename  = strDOC_CD & "_PDF_" & Replace(strDOC_ID, " ", "_") & strFileCountExt & ".pdf"
+                  strOutputFile   = strOutputPaths(j) & strPDFfilename
+                Else
+                  strCopyText     = "Receiving"
+                  strPDFfilename  = "RC_" & strDOC_CD & "_" & Replace(strDOC_ID, " ", "_") & strFileCountExt & ".pdf"
+                  strOutputFile   = strOutputPaths(j) & "RC\" & strPDFfilename
+                End If
+            
+                strDocTypeName = "PUR - Purchase Orders"
+                If bA10Processing Then
+                  Select Case strDOC_DEPT_CD
+                    Case "040"
+                      strDocTypeName = "PUR - Purchase Orders - EL"
+                    Case "060"
+                      strDocTypeName = "PUR - Purchase Orders - PA"
+                    Case "805"
+                      strDocTypeName = "PUR - Purchase Orders - TC"
+                  End Select  
+                End If
+
+            
+                strData1 = "BEGIN:" & vbCRLF &_
+                          ">>Dummy Key: Original xml: " & strStagingPaths(j) & strSourceFile & vbCRLF &_
+                          ">>DocTypeName: " & strDocTypeName & vbCRLF &_
+                          ">>DocDate: " & strPROC_DT & vbCRLF &_
+                          "Advantage Doc Code: " & strDOC_CD & vbCRLF &_
+                          "Department #: " & strDOC_DEPT_CD & vbCRLF &_
+                          "Doc ID: " & strDOC_ID & vbCRLF &_
+                          "Version #: " & strDOC_VERS_NO & vbCRLF &_
+                          "PO Date: " & strDOC_REC_DT_DC_FRMT & vbCRLF &_
+                          "Amount: " & strDOC_ACTU_AM & vbCRLF &_
+                          "Vendor-Customer #: " & strVEND_CUST_CD & vbCRLF &_
+                          "Vendor Name: " & strLGL_NM & vbCRLF &_
+                          "Copy: " & strCopyText & vbCRLF &_
+                          "Description: " & Replace(strDOC_DSCR, Chr(10), " ") & vbCRLF &_
+                          strLineItemDescriptions &_
+                          "Purchase Order #: " & strDOC_ID & vbCRLF &_
+                          ">>Dummy Key: hidden keywords begin here" & vbCRLF &_
+                          "Procurement ID: " & strPRCU_ID & vbCRLF &_
+                          strCommodityCodes &_
+                          strOBJ_ATT_UNID_LIST &_
+                          "SHA-256: " & UCase(strPDFfilename) & vbCRLF &_
+                          ">>FileTypeNum: 16" & vbCRLF &_
+                          ">>FullPath: " & strOutputFile & vbCRLF
+              
+                If d = 1 Then
+                  objOutFileDIP.Write(strData1)
+                Else
+                  objOutFileDIP_RC.Write(strData1)
+                End If
+              Next
+              
+              objFSO.CopyFile strSourcePath & strSourceFile, strSourcePath & "RC\r" & strSourceFile
+              If bCreatePR Then
+                objFSO.CopyFile strSourcePath & strSourceFile, strSourcePath & "ToPrint\" & strSourceFile
+              End If
+            Case "MA"
+                
+              strPDFfilename  = strDOC_CD & "_PDF_" & Replace(strDOC_ID, " ", "_") & strFileCountExt & ".pdf"    
+              strOutputFile   = strOutputPaths(j) & strPDFfilename
+                
+              strDocTypeName = "PUR - Master Agreements"  
+              If bA10Processing Then
+                Select Case strDOC_DEPT_CD
+                  Case "040"
+                    strDocTypeName = "PUR - Master Agreements - EL"
+                  Case "060"
+                    strDocTypeName = "PUR - Master Agreements - PA"
+                  Case "805"
+                    strDocTypeName = "PUR - Master Agreements - TC"
+                End Select  
+              End If
+
+                
+              strData1 = "BEGIN:" & vbCRLF &_
+                          ">>Dummy Key: Original xml: " & strStagingPaths(j) & strSourceFile & vbCRLF &_
+                          ">>DocTypeName: " & strDocTypeName & vbCRLF &_
+                          ">>DocDate: " & strPROC_DT & vbCRLF &_
+                          "Advantage Doc Code: " & strDOC_CD & vbCRLF &_
+                          "Department #: " & strDOC_DEPT_CD & vbCRLF &_
+                          "Doc ID: " & strDOC_ID & vbCRLF &_
+                          "Version #: " & strDOC_VERS_NO & vbCRLF &_
+                          "Vendor-Customer #: " & strVEND_CUST_CD & vbCRLF &_
+                          "Vendor Name: " & strLGL_NM & vbCRLF &_
+                          "Effective Date: " & PadDate(strEFBGN_DT_FRMT) & vbCRLF &_
+                          "Expiration Date: " & PadDate(strEFEND_DT_FRMT) & vbCRLF &_
+                          "Description: " & Replace(strDOC_DSCR, Chr(10), " ") & vbCRLF &_
+                          strLineItemDescriptions &_
+                          "MA #: " & strDOC_ID & vbCRLF &_
+                          ">>Dummy Key: hidden keywords begin here" & vbCRLF &_
+                          "Procurement ID: " & strPRCU_ID & vbCRLF &_
+                          strCommodityCodes &_
+                          strOBJ_ATT_UNID_LIST &_
+                          "SHA-256: " & UCase(strPDFfilename) & vbCRLF &_
+                          ">>FileTypeNum: 16" & vbCRLF &_
+                          ">>FullPath: " & strOutputFile & vbCRLF
+                          
+              objOutFileDIP.Write(strData1)
+              
+          End Select
+      
+        End If '*** END if xml file
+        
+      Next  '*** END FILE LOOP
+
+      '*** Close DIP files
+      WriteFooterDIP intDocCount, objOutFileDIP
+      objOutFileDIP.Close
+      If bCreateRCDIP Then
+        WriteFooterDIP intDocCount, objOutFileDIP_RC
+        objOutFileDIP_RC.Close
+      End If
+            
+      '** Copy to watched folder & WaitForBIRT (48 = 4min timeout)
+      Select Case strDOC_CD
+        Case "PO", "DO"
+          
+          retValue            = CopyDirectoryContentsFileSpec("*.json", strSourcePath, strWatchedPath)
+
+          retValue            = CopyDirectoryContentsFileSpec("*.xml", strSourcePath, strWatchedPath)
+
+          bTimeout  = WaitForBIRT(BIRT_TIME_OUT, strWatchedPath)
+          If bTimeout Then
+            retValueScript = 12
+            Exit For
+          End If        
+          
+          retValue  = UpdateSHA256hashValues(strOutputPaths(j), strOutputPaths(j) & strDOC_CD & "_DIP.txt")
+
+          retValue            = CopyDirectoryContentsFileSpec("*.json", strSourcePath & "RC\", strWatchedPath)
+
+          retValue            = CopyDirectoryContentsFileSpec("*.xml", strSourcePath & "RC\", strWatchedPath)
+        
+          
+          bTimeout  = WaitForBIRT(BIRT_TIME_OUT, strWatchedPath)
+          If bTimeout Then
+            retValueScript = 12
+            Exit For
+          End If
+          
+          retValue  = UpdateSHA256hashValues(strOutputPaths(j) & "RC\", strOutputPaths(j) & "RC\RC_" & strDOC_CD & "_DIP.txt")
+          
+        Case "MA"
+        
+          retValue            = CopyDirectoryContentsFileSpec("*.json", strSourcePath, strWatchedPath)
+
+          retValue            = CopyDirectoryContentsFileSpec("*.xml", strSourcePath, strWatchedPath)
+
+          bTimeout  = WaitForBIRT(BIRT_TIME_OUT, strWatchedPath)
+          If bTimeout Then
+            retValueScript = 12
+            Exit For
+          End If
+          
+          retValue  = UpdateSHA256hashValues(strOutputPaths(j), strOutputPaths(j) & strDOC_CD & "_DIP.txt")
+          
+      End Select
+    
+    Next '*** END MAIN PROCESS LOOP
+    
+    WriteLog("END MAIN PROCESS LOOP")
+    
+    WriteFooterDIP intPOattachTotal, objOutFileDIP_PO_att
+    WriteFooterDIP intMAattachTotal, objOutFileDIP_MA_att
+    WriteFooterDIP intDOattachTotal, objOutFileDIP_DO_att
+    WriteFooterDIP intRQattachTotal, objOutFileDIP_RQ_att
+        
+    WriteFooterIDX objOutFileDIP_PO_idx
+    WriteFooterIDX objOutFileDIP_DO_idx
+    WriteFooterIDX objOutFileDIP_MA_idx
+    WriteFooterIDX objOutFileDIP_RQ_idx
+        
+    objOutFileDIP_PO_att.Close
+    objOutFileDIP_DO_att.Close
+    objOutFileDIP_MA_att.Close
+    objOutFileDIP_RQ_att.Close
+
+    objOutFileDIP_PO_idx.Close
+    objOutFileDIP_DO_idx.Close
+    objOutFileDIP_MA_idx.Close
+    objOutFileDIP_RQ_idx.Close
+    
+    
+    strArchiveFolder = today_8_6
+    
+    '****** Copy DIPs to OnBase Watched Folder
+    CopyDIPS strArchiveFolder
+    '*************************************************************************************************
+        
+    objConn.Close
+    objConnOnBase.Close
+    
+    
+
+        
+    
+    '*** Archive this run to .7z file *********************************************************************************************************
+    retValue            = ArchiveFiles("PO", strArchiveFolder)
+    retValue            = ArchiveFiles("DO", strArchiveFolder)
+    retValue            = ArchiveFiles("MA", strArchiveFolder)
+    retValue            = ArchiveFiles("RQ", strArchiveFolder)
+
+    
+    Set objConn               = Nothing
+    Set objConnPROD           = Nothing
+    Set objConnOnBase         = Nothing
+    Set objFSO                = Nothing
+    Set objShell              = Nothing
+    Set objCommodityCodes      = Nothing
+    Set objLineDesc           = Nothing
+    Set objStringWidths       = Nothing
+      
+    
+    WriteLog("Script return code " & retValueScript)
+    
+    WScript.Quit(retValueScript)
+  
+    '*****************************************************************************************************************************************
+    '* Local Library
+    '*****************************************************************************************************************************************
+    Function CleanUpXML(pInData)
+      Dim strOutData
+      
+      strOutData                = pInData
+      
+      strOutData                 = Replace(strOutData, "         " & vbCRLF, "")
+      strOutData                 = Replace(strOutData, "><", ">" & vbCRLF & "<")
+      strOutData                 = Replace(strOutData, "      <", "<")
+      strOutData                 = Replace(strOutData, "</PO_DOC_HDR>" & vbCRLF & "      " & vbCRLF & "      " & vbCRLF & "      " & vbCRLF, "</PO_DOC_HDR>" & vbCRLF)
+      strOutData                 = Replace(strOutData, """Y"">" & vbCRLF & "<", """Y""><")
+      strOutData                 = Replace(strOutData, ">" & vbCRLF & "</", "></")
+      strOutData                 = Replace(strOutData, "</PO_DOC_COMM></PO_DOC_VEND>", "</PO_DOC_COMM>" & vbCRLF & "</PO_DOC_VEND>") 
+    
+      CleanUpXML                 = strOutData
+    
+    End Function
+  
+    Function LoadFontWidthTable()
+      Dim objInFile, strElements, retValue
+      retValue = 0
+      On Error Resume Next
+      Set objInFile = objFSO.OpenTextFile("D:\Scripts\ERP\config\ERP_font_width_table.csv", 1, False)
+      If Err.Number = 0 Then
+        Do While Not objInFile.AtEndOfStream
+          strElements = Split(objInFile.ReadLine, ",")
+          objStringWidths.Add CInt(strElements(0)), strElements(1)
+        Loop
+        objInFile.Close
+      Else
+        retValue = Err.Number
+        WriteLog("Unable to open ERP_font_width_table.csv")
+      End If
+      On Error Goto 0
+      
+      LoadFontWidthTable = retValue
+    End Function
+  
+    Function GetRowHeight(pData, pDOC_CD)
+      Dim intMax, intLines, dblTotalWidthPixels, dblHeight, strRowHeight, intReturns, dblWidthSpace
+      Dim intCurrReturns, intNextReturns, strCurrWord, strNextWord, strWords, w, intMaxWords, bHasReturns
+    
+      intLines               = 1
+      dblWidthSpace         = CDbl(objStringWidths(32))
+      dblTotalWidthPixels   = CDbl(0)
+      strRowHeight           = "0"
+      bHasReturns            = False
+      
+      Select Case pDOC_CD
+        Case "PO"
+          MAX_PIXEL_WIDTH = MAX_PIXEL_WIDTH_PO
+          MAX_HEIGHT      = MAX_SINGLE_LINE_ITEM_HEIGHT_PO
+        Case "DO"
+          MAX_PIXEL_WIDTH = MAX_PIXEL_WIDTH_DO
+          MAX_HEIGHT      = MAX_SINGLE_LINE_ITEM_HEIGHT_DO
+        Case "MA"
+          MAX_PIXEL_WIDTH = MAX_PIXEL_WIDTH_MA
+          MAX_HEIGHT      = MAX_SINGLE_LINE_ITEM_HEIGHT_MA
+      End Select  
+  
+      '********************************************************
+      '** NEW METHOD
+      '** 1.) Split whole description on Hard Returns (if any)  (UBound + 1 = initial total # of lines)
+      '** 2.) Then - walk through each array element to determine new lines based on total word length of array element (all may be less then threshold so may no new lines)
+      '********************************************************
+
+      strLines        = Split(pData, Chr(10))
+      intMaxLines     = UBound(strLines)
+      
+      '*** Since there could be no returns at all, intMaxLines could be 0, so intialize with intLines = 1
+      intLines        = intMaxLines + 1
+            
+      For l = 0 To intMaxLines
+
+        '*** Now walk through all words in this line to determine additional lines based on total width
+        strWords               = Split(strLines(l), " ")
+        intMaxWords            = UBound(strWords)
+        dblTotalWidthPixels    = 0
+        
+        For w = 0 To intMaxWords
+        
+          strCurrWord = strWords(w)
+          strNextWord = ""
+          
+          If w < intMaxWords Then
+            strNextWord = strWords(w + 1)
+          End If
+    
+          '*** Get the current and the next word width
+          dblCurrWordWidth =  GetWordWidth(strCurrWord)
+          dblNextWordWidth =  GetWordWidth(strNextWord)
+  
+          '*** Start by setting the total to the first word's length  
+          If w = 0 Then
+            dblTotalWidthPixels = dblCurrWordWidth
+          End If
+          
+          '*** Accumulate total pixel width of this string (including a space between words)
+          dblTotalWidthPixels = dblTotalWidthPixels + dblWidthSpace + dblNextWordWidth
+          
+          '*** If the total exceeds the threshold, add a line to the total
+          If (dblTotalWidthPixels >= MAX_PIXEL_WIDTH) Then
+            intLines             = intLines + 1
+            '*** Initialize the total to the current word width and continue on.
+            dblTotalWidthPixels = dblCurrWordWidth
+          End If
+  
+        Next
+
+      Next
+      
+      intLines = intLines + 1
+      
+      WriteLog("TOTAL LINES CALCULATED: " & intLines)
+      
+      '*** Get the height in inches based on total lines
+      
+      dblHeight           = Round((intLines * LINE_HEIGHT_INCHES), 3) 
+      
+      '*** Set minimum height at 1/2 inch & max height at 4.8  *******************************************************************************
+      If dblHeight < 0.5 Then
+        dblHeight = 0.5
+      ElseIf dblHeight > MAX_HEIGHT Then
+        WriteLog("MAX HEIGHT ENCOUNTERED - Data Length: " & Len(pData) & " - Calculated Height: " & dblHeight & "in - Calculated Lines: " & intLines & " - Max Lines: " & Ceil(MAX_HEIGHT / LINE_HEIGHT_INCHES))
+        dblHeight = MAX_HEIGHT
+      End If    
+      
+      strRowHeight = CStr(dblHeight)
+  
+      GetRowHeight = strRowHeight
+  
+    End Function
+    
+    Function GetWordWidth(pData)
+      Dim intMax, strChar, dblDataWidthPixels
+      dblDataWidthPixels = CDbl(0)
+      intMax = Len(pData)
+      For n = 1 To intMax
+        strChar = Mid(pData, n, 1)
+        dblDataWidthPixels = dblDataWidthPixels + CDbl(objStringWidths(Asc(strChar)))
+      Next
+      GetWordWidth = dblDataWidthPixels
+    End Function
+    
+    Function SplitCommodityLines(pDOC_CD)
+      Dim strRowHeight, dblHeight, strDataSplit, n, intMaxReturns, intLines, CHAR_PER_LINE, MAX_HEIGHT, intDataLen
+      Dim intCommodityLinesIn, i, intCommodityLinesOut
+      
+      '*** store the original commodity lines (global variable)
+      strDOC_COMM_TEMP         = strDOC_COMM
+      
+      intCommodityLinesOut     = 0
+      intCommodityLinesIn      = UBound(strDOC_COMM_TEMP)
+
+      Select Case pDOC_CD
+        Case "PO"
+          CHAR_PER_LINE = MAX_CHAR_PER_LINE_PO
+          MAX_HEIGHT    = MAX_SINGLE_LINE_ITEM_HEIGHT_PO
+        Case "DO"
+          CHAR_PER_LINE = MAX_CHAR_PER_LINE_DO
+          MAX_HEIGHT    = MAX_SINGLE_LINE_ITEM_HEIGHT_DO
+        Case "MA"
+          CHAR_PER_LINE = MAX_CHAR_PER_LINE_MA
+          MAX_HEIGHT    = MAX_SINGLE_LINE_ITEM_HEIGHT_MA
+      End Select
+      
+      For i = 0 To intCommodityLinesIn
+      
+        strData                   = Trim(GetXMLElementData("DSCR_EXT", strDOC_COMM_TEMP(i)))
+        intDataLen                = Len(strData)          
+        intPos1                   = InStr(1, strDOC_COMM_TEMP(i), "</PO_DOC_COMM>")
+        intPos2                   = InStr(1, strDOC_COMM_TEMP(i), "</AMS_DOC_XML_EXPORT_FILE>")
+                
+        If (intPos1 > 0) And (intPos2 > 0) Then
+          strDOC_COMM_TRAILER     = Mid(strDOC_COMM_TEMP(i), intPos1 + 14)
+          strDOC_COMM_TEMP(i)     = Mid(strDOC_COMM_TEMP(i), 1, intPos1 + 14)
+        End If
+
+        '***ignore the DSCR_EXT of the header
+        If i = 0 Then
+          intDataLen = 0
+          WriteLog("HEADER DSCR_EXT DETECTED")
+        End If
+
+        
+        If intDataLen > 0 Then
+          '*** Get number of hard returns in the string *****************************************************************************************
+          intLines                = 0
+          strDataSplit            = Split(strData, Chr(10))
+          intMaxReturns           = UBound(strDataSplit)
+          
+          If intMaxReturns > 0 Then
+          
+            For n = 0 To intMaxReturns
+              '**** If the string element in the array  is less than or equal to CHAR_PER_LINE, then increment line count      ******************
+              '**** otherwise divide the string element by CHAR_PER_LINE and round up                                          ******************
+              
+              If Len(strDataSplit(n)) <= CHAR_PER_LINE Then
+                intLines = intLines + 1
+                ReDim Preserve strTemp(intLines)
+                strTemp(intLines) = strDataSplit(n) & vbCRLF
+              Else
+              
+                '**** when the string is bigger than CHAR_PER_LINE
+                '**** break the string into words and increment lines
+                '**** by stringing words together until the length >= CHAR_PER_LINE
+              
+                intPos      = 1 
+                intElemLen   = Len(strDataSplit(n))
+                strWords    = Split(strDataSplit(n), " ")   
+                intMaxWords = UBound(strWords)   
+                  
+                For x = 0 To intMaxWords
+                  strNextWord = ""
+                  If x < intMaxWords Then
+                    strNextWord = strWords(x + 1) 
+                  End If
+                
+                  strNewLine = strNewLine & strWords(x) & " "
+                  If (Len(strNewLine) + Len(strNextWord) >= CHAR_PER_LINE) Or (x = intMaxWords) Then
+                    intLines = intLines + 1
+                    ReDim Preserve strTemp(intLines)
+                    If (x = intMaxWords) Then
+                      strTemp(intLines)   = Trim(strNewLine) & vbCRLF
+                    Else
+                      strTemp(intLines)   = strNewLine
+                    End If
+                    strNewLine = ""
+                  End If
+      
+                Next
+                
+              End If
+      
+            Next
+      
+          Else
+          
+            '*** no hard returns found in description
+            intPos          = 1 
+            intElemLen       = Len(strData)
+            intNewLines     = Ceil(intElemLen / CHAR_PER_LINE)
+            
+            For x = 1 to intNewLines
+              intLines = intLines + 1
+              ReDim Preserve strTemp(intLines)
+              If intPos <= intElemLen Then
+                strTemp(intLines) = Mid(strData, intPos, CHAR_PER_LINE)
+              Else
+                strTemp(intLines) = ""
+              End If
+              intPos = intPos + CHAR_PER_LINE
+            Next
+      
+          End If
+        
+          '*** Calculate height of row **********************************************************************************************************          
+          dblHeight           = Round((intLines * LINE_HEIGHT_INCHES), 3)
+          
+          bSplit              = False
+
+          '*** Set minimum height at 1/2 inch & max height at MAX_HEIGHT  *******************************************************************************
+          If dblHeight > MAX_HEIGHT Then
+            
+            bSplit                = True
+          
+            intMaxLines           = Ceil(MAX_HEIGHT / LINE_HEIGHT_INCHES)  
+            intMaxElements        = UBound(strTemp)
+          
+            'strip out the existing description 
+            intPos1               = InStr(1, strDOC_COMM_TEMP(i), "<DSCR_EXT Attribute=" & Chr(34) & "Y" & Chr(34) & "><![CDATA[")
+            intPos2               = InStr(intPos1, strDOC_COMM_TEMP(i), "]]></DSCR_EXT>")
+
+            strCommodityA         = Mid(strDOC_COMM_TEMP(i), 1, intPos1 + 32)
+            strCommodityB          = Mid(strDOC_COMM_TEMP(i), intPos2)
+
+            intNewLines           = 0
+            strNewDescription     = ""
+          
+            For x = 1 To intMaxElements
+            
+              strNewDescription = strNewDescription + strTemp(x)  
+              
+              If (x Mod intMaxLines = 0) Or (x = intMaxElements) Then
+              
+                intNewLines = intNewLines + 1
+                ReDim Preserve strDOC_COMM_OUT(intCommodityLinesOut)
+                strDOC_COMM_OUT(intCommodityLinesOut) = strCommodityA & strNewDescription & strCommodityB
+  
+                If intNewLines > 1 Then 
+                  '**** blank out line Item, Quantity, Unit, Unit Price, Total Price
+                  '**** for all newly inserted overflow commodity lines
+                  
+                  strCOL1 = Trim(GetXMLElementData("DOC_COMM_LN_NO", strDOC_COMM_OUT(intCommodityLinesOut)))
+                  strCOL2 = Trim(GetXMLElementData("QTY", strDOC_COMM_OUT(intCommodityLinesOut)))
+                  strCOL3 = Trim(GetXMLElementData("UNIT_MEAS_CD", strDOC_COMM_OUT(intCommodityLinesOut)))
+                  strCOL4 = Trim(GetXMLElementData("UNIT_PRICE", strDOC_COMM_OUT(intCommodityLinesOut)))
+                  strCOL5 = Trim(GetXMLElementData("ITM_TOT_AM", strDOC_COMM_OUT(intCommodityLinesOut)))
+                  
+                  strDOC_COMM_OUT(intCommodityLinesOut) = Replace(strDOC_COMM_OUT(intCommodityLinesOut), "[CDATA[" & strCOL1 & "]]></DOC_COMM_LN_NO>", "[CDATA[0]]></DOC_COMM_LN_NO>")
+                  strDOC_COMM_OUT(intCommodityLinesOut) = Replace(strDOC_COMM_OUT(intCommodityLinesOut), "[CDATA[" & strCOL2 & "]]></QTY>", "[CDATA[0]]></QTY>")
+                  strDOC_COMM_OUT(intCommodityLinesOut) = Replace(strDOC_COMM_OUT(intCommodityLinesOut), "[CDATA[" & strCOL3 & "]]></UNIT_MEAS_CD>", "[CDATA[0]]></UNIT_MEAS_CD>")
+                  strDOC_COMM_OUT(intCommodityLinesOut) = Replace(strDOC_COMM_OUT(intCommodityLinesOut), "[CDATA[" & strCOL4 & "]]></UNIT_PRICE>", "[CDATA[0]]></UNIT_PRICE>")
+                  strDOC_COMM_OUT(intCommodityLinesOut) = Replace(strDOC_COMM_OUT(intCommodityLinesOut), "[CDATA[" & strCOL5 & "]]></ITM_TOT_AM>", "[CDATA[0]]></ITM_TOT_AM>")
+                  
+                End If                
+
+                'strDOC_COMM_OUT(intCommodityLinesOut) = strDOC_COMM_TEMP(i)
+                intCommodityLinesOut   = intCommodityLinesOut + 1
+                
+                strNewDescription      = ""
+                
+              End If
+          
+            Next
+          
+          Else
+          
+            ' just copy the existing line - splitting not necessary - row height is OK
+            ReDim Preserve strDOC_COMM_OUT(intCommodityLinesOut)
+            strDOC_COMM_OUT(intCommodityLinesOut) = strDOC_COMM_TEMP(i)
+            intCommodityLinesOut = intCommodityLinesOut + 1
+          
+          End If    
+        
+        Else
+        
+           'just copy the existing line - no description found in element
+          ReDim Preserve strDOC_COMM_OUT(intCommodityLinesOut)
+          strDOC_COMM_OUT(intCommodityLinesOut) = strDOC_COMM_TEMP(i)
+          intCommodityLinesOut = intCommodityLinesOut + 1          
+          
+        End If
+
+      Next
+          
+      '*** replace the trailer data    
+      intCommodityLinesOut                   = UBound(strDOC_COMM_OUT)
+      
+      strDOC_COMM_OUT(intCommodityLinesOut) = strDOC_COMM_OUT(intCommodityLinesOut) & strDOC_COMM_TRAILER
+    
+      WriteLog("COMMODITY LINES IN : " & intCommodityLinesIn)
+      WriteLog("COMMODITY LINES OUT: " & intCommodityLinesOut)
+      
+      strDOC_COMM         = strDOC_COMM_OUT
+      
+      SplitCommodityLines = bSplit
+      
+    End Function    
+        
+    Function Ceil(pNumber)
+      Ceil = Int(pNumber)
+      If Ceil <> pNumber Then
+        Ceil = Ceil + 1
+      End If
+    End Function
+    
+    Function GetAttachments(pDOC_TYP, pPO_DOC_ID, pDOC_CD, pDOC_DEPT_CD, pDOC_ID, pDOC_VERS_NO, pOutPath, pOBJ_ATT_PG_UNID, pVEND_CUST_CD, pLGL_NM, pDOC_REC_DT_DC_FRMT)
+    
+      Dim strSQL, objLOB, strFileName, strFileNameGUID, objRS2, retValue, intFileCount, strOBJ_ATT_UNID, strOBJ_ATT_DT, strOBJ_ATT_USER_ID, strOBJ_ATT_DSCR
+      Dim strOBJ_ATT_SG_UNID, intOBJ_ATT_SEQ_NO, intOBJ_ATT_TYP, intOBJ_ATT_ST, strData2, intPos, strExt, strOBJ_ATT_UNID_LIST_TEMP
+      Dim strDOC_ID_OUT, strOBJ_ATT_COMP_NM, strOBJ_ATT_COMP_DESC, strSHA256hash, strData3, strOBJ_ATT_DSCR_TEMP, strOBJ_ATT_DEL_USID, strOBJ_ATT_DEL_DT
+      
+      retValue                     = 0
+      intFileCount                 = 0
+      strOBJ_ATT_UNID_LIST_TEMP   = ""
+      
+      strSQL = "SELECT a.OBJ_ATT_UNID, " &_
+               "a.OBJ_ATT_NM, " &_
+               "b.OBJ_ATT_DATA, " &_
+               "a.OBJ_ATT_SG_UNID, " &_
+               "a.OBJ_ATT_DT, " &_
+               "a.OBJ_ATT_USER_ID, " &_
+               "a.OBJ_ATT_DSCR, " &_
+               "a.OBJ_ATT_SEQ_NO, " &_
+               "a.OBJ_ATT_ST, " &_
+               "a.OBJ_ATT_TYP, " &_
+               "a.OBJ_ATT_COMP_NM, " &_
+               "a.OBJ_ATT_COMP_DESC, " &_
+               "a.OBJ_ATT_DEL_USID, " &_
+               "a.OBJ_ATT_DEL_DT " &_
+               "FROM O_FINPROD.IN_OBJ_ATT_CTLG a, O_FINPROD.IN_OBJ_ATT_STOR b, O_FINPROD.IN_OBJ_ATT_DOC_REF c " &_
+               "WHERE a.OBJ_ATT_UNID = b.OBJ_ATT_UNID(+)" &_
+               "AND a.OBJ_ATT_UNID = c.OBJ_ATT_UNID " &_
+               "AND a.OBJ_ATT_PG_UNID = '" & pOBJ_ATT_PG_UNID & "' " &_
+               "AND c.DOC_TYP = '" & pDOC_TYP & "' " &_
+               "AND c.DOC_CD = '" & pDOC_CD & "' " &_
+               "AND c.DOC_ID = '" & pDOC_ID & "' " &_
+               "AND c.DOC_VERS_NO <= " & pDOC_VERS_NO & " " &_     
+               "ORDER BY b.OBJ_ATT_UNID"
+      
+       WriteLog("ATTACHMENT SQL: " & strSQL)
+      
+       Set objRS2 = objConn.Execute(strSQL)
+       Do While Not objRS2.EOF
+                    
+          strOBJ_ATT_UNID       = objRS2.Fields("OBJ_ATT_UNID").Value
+          strFileName           = objRS2.Fields("OBJ_ATT_NM").Value
+          objLOB                = objRS2.Fields("OBJ_ATT_DATA").Value
+          strOBJ_ATT_SG_UNID    = objRS2.Fields("OBJ_ATT_SG_UNID").Value
+          strOBJ_ATT_DT         = objRS2.Fields("OBJ_ATT_DT").Value
+          strOBJ_ATT_USER_ID    = objRS2.Fields("OBJ_ATT_USER_ID").Value
+          strOBJ_ATT_DSCR       = NoNull(objRS2.Fields("OBJ_ATT_DSCR").Value)
+          strOBJ_ATT_COMP_NM    = objRS2.Fields("OBJ_ATT_COMP_NM").Value
+          strOBJ_ATT_COMP_DESC  = objRS2.Fields("OBJ_ATT_COMP_DESC").Value
+          intOBJ_ATT_SEQ_NO     = objRS2.Fields("OBJ_ATT_SEQ_NO").Value                  
+          intOBJ_ATT_ST         = objRS2.Fields("OBJ_ATT_ST").Value                  
+          intOBJ_ATT_TYP        = objRS2.Fields("OBJ_ATT_TYP").Value                  
+          strOBJ_ATT_DEL_USID   = objRS2.Fields("OBJ_ATT_DEL_USID").Value
+          strOBJ_ATT_DEL_DT     = objRS2.Fields("OBJ_ATT_DEL_DT").Value  
+  
+          strOBJ_ATT_DSCR_TEMP = strOBJ_ATT_DSCR
+          
+          WriteLog(strOBJ_ATT_UNID)
+  
+          'strFileName          = Replace(strFileName, ",", " ")
+  
+          intPos              = InStrRev(strFileName, ".")
+          If intPos > 0 Then
+            strExt             = Mid(strFileName, (intPos + 1))
+            strFileNameGUID   = Mid(strFileName, 1, (intPos - 1)) & "_[" & LCase(GetRandomHexValue) & "]." & strExt
+          Else
+            WriteLog(strFileName & " has no file extension.")
+            strFileNameGUID    = strFileName & "_[" & LCase(GetRandomHexValue) & "]"
+          End If
+  
+          '*** the following counters are total records retrieved ***********************************************
+
+          Select Case pDOC_TYP
+            Case "PO"
+              Select Case pDOC_CD
+                Case "PO"
+                  intPOattachCount = intPOattachCount + 1
+                  intFileCount     = intPOattachCount
+                Case "DO"  
+                  intDOattachCount = intDOattachCount + 1
+                  intFileCount     = intDOattachCount
+              End Select
+            Case "MA"
+              intMAattachCount = intMAattachCount + 1
+              intFileCount     = intMAattachCount
+            Case "RQ"
+              intRQattachCount = intRQattachCount + 1
+              intFileCount     = intRQattachCount
+
+          End Select
+
+          strOBJ_ATT_UNID_LIST_TEMP   = strOBJ_ATT_UNID_LIST_TEMP & "Advantage Attachment ID: " & strOBJ_ATT_UNID & vbCRLF
+          
+          If Len(Trim(strOBJ_ATT_DSCR)) > 0 Then
+            strOBJ_ATT_DSCR           = "Long Description: " & strOBJ_ATT_DSCR & vbCRLF
+          End If
+          
+          bOnBaseAttachmentIDFound = OnBaseAttachmentIDFound(strOBJ_ATT_UNID)
+          
+          If bCheckDuplicateAttachments = False Then
+            bOnBaseAttachmentIDFound = False
+          End If
+          
+          If Not bOnBaseAttachmentIDFound Then
+            'strOBJ_ATT_UNID_LIST_TEMP   = strOBJ_ATT_UNID_LIST_TEMP & "Advantage Attachment ID: " & strOBJ_ATT_UNID & vbCRLF
+                        
+            strLINE_PO                   = ""
+            
+            '*** the following counts are records not already in OnBase **************************************
+            strDOC_ID_OUT    = pDOC_ID
+
+            If Not IsNull(objLOB) Then
+            
+              '*** if the attachment is not deleted
+              Select Case pDOC_TYP
+                Case "PO"
+                  Select Case pDOC_CD
+                    Case "PO"
+                      intPOattachTotal = intPOattachTotal + 1
+                      strLINE_PO       = "Purchase Order #: " & strDOC_ID_OUT & vbCRLF
+                    Case "DO"
+                      intDOattachTotal = intDOattachTotal + 1
+                  End Select
+                Case "MA"
+                  intMAattachTotal = intMAattachTotal + 1
+                Case "RQ"
+                  intRQattachTotal = intRQattachTotal + 1
+                  strLINE_PO       = "Purchase Order #: " & pPO_DOC_ID & vbCRLF
+                  strDOC_ID_OUT    = pPO_DOC_ID
+              End Select  
+
+              WriteLog(PadString(pDOC_CD, 3, "R", " ") & " " &_
+                      pDOC_DEPT_CD & " " & pDOC_ID & " [v" & pDOC_VERS_NO & "] " &_
+                      "Saving attachment: " & "[" & PadString(intFileCount, 2, "R", " ") & "] [" & strOBJ_ATT_UNID & "] " & strFileNameGUID & " to " & pOutPath)              
+              
+              
+              '*** Save the attachment to disk *****************************************************************************************************************
+              If Len(strFileNameGUID) > 0 Then  
+                retValue            = SaveBinaryData(pOutPath & strFileNameGUID, objLOB)
+              Else
+                WriteLog("No attachment filename.  Unable to save file.")
+              End If
+              
+              strSHA256hash       = UCase(GetSHA256hash(pOutPath & strFileNameGUID))
+              
+              
+              strDocTypeName = "PUR - Advantage Attachments"
+              If bA10Processing Then
+                Select Case pDOC_DEPT_CD
+                  Case "040"
+                    strDocTypeName = "PUR - Advantage Attachments - EL"
+                  Case "060"
+                    strDocTypeName = "PUR - Advantage Attachments - PA"
+                  Case "805"
+                    strDocTypeName = "PUR - Advantage Attachments - TC"
+                End Select  
+              End If
+              
+              '*** Build DIP file ******************************************************************************************************************************
+              strData2 = "BEGIN:" & vbCRLF &_
+                        ">>Dummy Key: Document #" & intFileCount & vbCRLF &_
+                        ">>DocTypeName: " & strDocTypeName & vbCRLF &_
+                        ">>DocDate: " & strPROC_DT & vbCRLF &_
+                        strLINE_PO &_
+                        "Advantage Attachment ID: " & strOBJ_ATT_UNID & vbCRLF &_
+                        "Attachment Date: " & PadDate(strOBJ_ATT_DT) & vbCRLF &_
+                        strOBJ_ATT_DSCR &_
+                        "Filename: " & strFileName & vbCRLF &_
+                        ">>Dummy Key: hidden keywords begin here" & vbCRLF &_
+                        "Doc ID: " & strDOC_ID_OUT & vbCRLF &_
+                        "Version #: " & pDOC_VERS_NO & vbCRLF &_
+                        "Department #: " & pDOC_DEPT_CD & vbCRLF &_
+                        "Advantage Doc Type: " & pDOC_TYP & vbCRLF &_
+                        "Advantage Doc Code: " & pDOC_CD & vbCRLF &_
+                        "GUID File Name: " & strFileNameGUID & vbCRLF &_
+                        "Vendor-Customer #: " & pVEND_CUST_CD & vbCRLF &_
+                        "Vendor Name: " & Replace(pLGL_NM, ",", " ") & vbCRLF &_
+                        "Advantage Attachment Primary Group ID: " & pOBJ_ATT_PG_UNID & vbCRLF &_
+                        "Advantage Attachment Secondary Group ID: " & strOBJ_ATT_SG_UNID & vbCRLF &_
+                        "Advantage Attachment User: " & strOBJ_ATT_USER_ID & vbCRLF &_
+                        "Advantage Attachment Status: " & intOBJ_ATT_ST & vbCRLF &_
+                        "Advantage Attachment Type: " & intOBJ_ATT_TYP & vbCRLF &_
+                        "Advantage Attachment Component Name: " & strOBJ_ATT_COMP_NM & vbCRLF &_
+                        "Advantage Attachment Component Context: " & strOBJ_ATT_COMP_DESC & vbCRLF &_
+                        "Advantage Attachment Sequence #: " & intOBJ_ATT_SEQ_NO & vbCRLF &_
+                        "Advantage Attachment Alt Status:" & vbCRLF &_ 
+                        "Advantage Attachment Alt ID:" & vbCRLF &_ 
+                        "Advantage Attachment Deleted User:" & vbCRLF &_ 
+                        "Advantage Attachment Deleted Date:" & vbCRLF &_ 
+                        "SHA-256: " & strSHA256hash & vbCRLF &_
+                        ">>FileTypeNum: " & GetFileTypeNum(strFileNameGUID) & vbCRLF &_
+                        ">>FullPath: " & pOutPath & strFileNameGUID & vbCRLF        
+  
+              strData3 = strOBJ_ATT_UNID & "|" &_
+                         PadDate(strOBJ_ATT_DT) & "|" &_
+                         strFileNameGUID & "|" &_
+                         pOutPath & strFileNameGUID & "|" &_
+                         strOBJ_ATT_USER_ID & "|" &_
+                         Replace(strOBJ_ATT_DSCR_TEMP, vbCRLF, " ") & "|" &_
+                         pDOC_ID & "|" &_
+                         pDOC_DEPT_CD & "|" &_
+                         pDOC_ID & "|" &_
+                         pDOC_TYP & "|" &_
+                         pDOC_CD & "|" &_
+                         pDOC_VERS_NO & "|" &_
+                         strSHA256hash
+
+  
+              '*** Write to correct attachment DIP / Index files ****************************************************************************************
+              Select Case pDOC_TYP
+                Case "PO"                
+                  Select Case pDOC_CD
+                    Case "PO"
+                      objOutFileDIP_PO_att.Write(strData2)
+                      objOutFileDIP_PO_idx.WriteLine(strData3)
+                    Case "DO"
+                      objOutFileDIP_DO_att.Write(strData2)
+                      objOutFileDIP_DO_idx.WriteLine(strData3)
+                  End Select
+                Case "MA"
+                  objOutFileDIP_MA_att.Write(strData2)
+                  objOutFileDIP_MA_idx.WriteLine(strData3)
+                Case "RQ"
+                  objOutFileDIP_RQ_att.Write(strData2)
+                  objOutFileDIP_RQ_idx.WriteLine(strData3)
+              End Select
+
+            Else
+            
+              '**** BLOB field is null - deleted attachment *****************************************************************************************
+              WriteLog("DELETED ATTACHMENT [" & strOBJ_ATT_UNID & "] " & strFileName & " USID: " & strOBJ_ATT_DEL_USID & " on: " & strOBJ_ATT_DEL_DT)
+              
+            End If
+          Else
+             
+             If IsNull(objLOB) Then            
+                WriteLog("DELETED ATTACHMENT [" & strOBJ_ATT_UNID & "] " & strFileName & " USID: " & strOBJ_ATT_DEL_USID & " on: " & strOBJ_ATT_DEL_DT)
+             Else
+                WriteLog(PadString(pDOC_CD, 3, "R", " ") & " " &_
+                         pDOC_DEPT_CD & " " & pDOC_ID & " [v" & pDOC_VERS_NO & "] " &_
+                         "Attachment Already in OnBase: " & "[" & PadString(intFileCount, 2, "R", " ") & "] [" & strOBJ_ATT_UNID & "] [" & strFileName & "]")
+             
+             End If   
+          End If
+          objRS2.MoveNext
+       Loop           
+       
+       '*** Store all Attachment OBJ_ATT_UNID values in above loop to global variable strOBJ_ATT_UNID_LIST to be written to document DIP file
+       Select Case pDOC_TYP
+        Case "PO", "MA"
+          strOBJ_ATT_UNID_LIST = strOBJ_ATT_UNID_LIST_TEMP
+        Case "RQ"
+          'strOBJ_ATT_UNID_LIST = strOBJ_ATT_UNID_LIST & strOBJ_ATT_UNID_LIST_TEMP
+       End Select
+              
+       If intFileCount = 0 Then        
+          WriteLog("* No attachments found for " & PadString(pDOC_CD, 3, "R", " ") & " " & pDOC_DEPT_CD & " " & pDOC_ID & " - " & pDOC_VERS_NO)
+       End If
+       
+       objRS2.Close
+       Set objRS2              = Nothing
+     
+       GetAttachments         = retValue
+    
+    End Function
+  
+    Function OnBaseAttachmentIDFound(pOBJ_ATT_UNID)
+      Dim strSQL, objRS3, bFound, intCount
+      
+      bFound       = False
+      intCount    = 0
+      
+      strSQL       = "SELECT COUNT(*) AS NUM_FOUND FROM hsi.keyitem481 WHERE hsi.keyitem481.keyvaluebig = " & pOBJ_ATT_UNID & " " &_
+                    "AND (SELECT itemtypenum FROM hsi.itemdata WHERE hsi.itemdata.itemnum = hsi.keyitem481.itemnum) = 267"
+  
+      Set objRS3   = objConnOnBase.Execute(strSQL)
+      Do While Not objRS3.EOF
+        intCount = objRS3.Fields("NUM_FOUND").Value
+        objRS3.MoveNext
+      Loop
+        
+      If intCount > 0 Then
+        bFound = True
+      End If
+        
+      objRS3.Close    
+      Set objRS3              = Nothing
+      OnBaseAttachmentIDFound = bFound
+    
+    End Function
+  
+    Function UpdateSHA256hashValues(pOutputPath, pDIPfileFullPath)
+      Dim objLocalFolder, objLocalFileCol, objInDIPFile, objFile, strDIPData
+    
+      If Not objFSO.FileExists(pDIPfileFullPath) Then
+        WriteLog("DIP File not found: " & pDIPfileFullPath)
+        Exit Function
+      End If
+    
+      Set objInDIPFile      = objFSO.OpenTextFile(pDIPfileFullPath, 1, False)
+      strDIPData            = objInDIPFile.ReadAll
+      objInDIPFile.Close
+      Set objInDIPFile      = Nothing
+            
+      Set objLocalFolder     = objFSO.GetFolder(pOutputPath)
+      Set objLocalFileCol    = objLocalFolder.Files
+      For Each objFile In objLocalFileCol
+        strDIPData = Replace(strDIPData, "SHA-256: " & UCase(objFile.Name), "SHA-256: " & GetSHA256hash(pOutputPath & objFile.Name))
+      Next
+    
+      Set objInDIPFile      = objFSO.OpenTextFile(pDIPfileFullPath, 2, True)
+      objInDIPFile.Write(strDIPData)
+      objInDIPFile.Close
+      
+      Set objInDIPFile      = Nothing
+      Set objLocalFolder    = Nothing
+      Set objLocalFileCol   = Nothing      
+    
+    End Function
+  
+    Function GetSHA256hash(pFileName)
+      Dim strHash, objExec
+      objShell.CurrentDirectory = "D:\Scripts\ERP\bin"
+      WriteLog("C:\openjdk-8u312-b07\bin\java.exe sha256cmd " & Chr(34) & pFileName & Chr(34))
+      Set objExec = objShell.Exec("C:\openjdk-8u312-b07\bin\java.exe sha256cmd " & Chr(34) & pFileName & Chr(34))    
+      Do
+        strHash = objExec.StdOut.ReadLine()
+      Loop While Not objExec.Stdout.atEndOfStream
+      WriteLog("SHA-256: " & UCase(strHash))
+      GetSHA256hash = UCase(strHash)
+    End Function
+  
+    Function SaveBinaryData(pFileName, pByteArray)
+          
+      Const adTypeBinary             = 1
+      Const adSaveCreateOverWrite   = 2
+      Dim objBinaryStream
+      Set objBinaryStream           = CreateObject("ADODB.Stream")
+      
+      objBinaryStream.Type           = adTypeBinary
+      objBinaryStream.Open
+      objBinaryStream.Write pByteArray
+
+      WriteLog("Saving to file: " & pFileName)
+      
+      objBinaryStream.SaveToFile pFileName, adSaveCreateOverWrite
+      objBinaryStream.Close
+      
+      Set objBinaryStream           = Nothing
+      
+    End Function  
+  
+    Function ArchiveFiles(pDOC_CD, pToday_8_6_Folder)
+      Dim strArchiveFileName, objNewFolder, strTargetFolder, strCmd, retValue
+        
+      strTargetFolder = strOutputBasePath & "Archive\" & pDOC_CD & "\"  & pToday_8_6_Folder & "\"
+      If Not objFSO.FolderExists(strTargetFolder) Then
+        Set objNewFolder = objFSO.CreateFolder(strTargetFolder)
+      End If
+
+      strArchiveFileName    = "NCP_" & pToday_8_6_Folder & ".7z"
+    
+      If objFSO.FileExists(strTargetFolder & strArchiveFileName) Then
+        WriteLog("Deleting existing Archive: " & strTargetFolder & strArchiveFileName)
+        objFSO.DeleteFile strTargetFolder & strArchiveFileName
+      End If
+        
+      WriteLog("Creating Archive: " & strTargetFolder & strArchiveFileName)
+    
+      strCmd                 = "C:\Scripts\PUR_archive_files.bat " & strTargetFolder & strArchiveFileName & " " & pDOC_CD
+      retValue               = RunAppLocalOrRemoteWMI_A(strCmd, strPRINT_SERVER, True)
+      WriteLog("Return Code was " & CStr(retValue))
+
+      ArchiveFiles = retValue
+      
+    End Function
+
+    Sub CopyDIPS(pToday_8_6_Folder)
+    
+      Dim strDIPTarget
+      
+      strDIPTarget         = "\\" & strPRINT_SERVER & "\onbase\PUR_OnBase_DIP_Import\"  
+	  
+      On Error Resume Next
+      
+      retValue            = ClearDirectoryContents(strDIPTarget)
+
+	  WriteLog("Attempting to copy DIP files to : " & strDIPTarget)
+      
+      objFSO.CopyFile "\\" & strPRINT_SERVER & "\c$\CGIAPPS\AdvFormsModule\ProcessingCenter\Main\output\JETPDF\DO\DO_DIP.txt", strDIPTarget
+      
+      If Err.Number <> 0 Then WriteLog(Err.Description)
+      
+      objFSO.CopyFile "\\" & strPRINT_SERVER & "\c$\CGIAPPS\AdvFormsModule\ProcessingCenter\Main\output\JETPDF\PO\PO_DIP.txt", strDIPTarget
+      objFSO.CopyFile "\\" & strPRINT_SERVER & "\c$\CGIAPPS\AdvFormsModule\ProcessingCenter\Main\output\JETPDF\MA\MA_DIP.txt", strDIPTarget
+      objFSO.CopyFile "\\" & strPRINT_SERVER & "\c$\CGIAPPS\AdvFormsModule\ProcessingCenter\Main\output\JETPDF\DO\RC\RC_DO_DIP.txt", strDIPTarget
+      objFSO.CopyFile "\\" & strPRINT_SERVER & "\c$\CGIAPPS\AdvFormsModule\ProcessingCenter\Main\output\JETPDF\PO\RC\RC_PO_DIP.txt", strDIPTarget      
+      objFSO.CopyFile "\\" & strPRINT_SERVER & "\c$\CGIAPPS\AdvFormsModule\ProcessingCenter\Main\output\JETPDF\DO\attachments\!DO_attachment_indexes_DIP.txt", strDIPTarget
+      objFSO.CopyFile "\\" & strPRINT_SERVER & "\c$\CGIAPPS\AdvFormsModule\ProcessingCenter\Main\output\JETPDF\PO\attachments\!PO_attachment_indexes_DIP.txt", strDIPTarget
+      objFSO.CopyFile "\\" & strPRINT_SERVER & "\c$\CGIAPPS\AdvFormsModule\ProcessingCenter\Main\output\JETPDF\MA\attachments\!MA_attachment_indexes_DIP.txt", strDIPTarget
+      objFSO.CopyFile "\\" & strPRINT_SERVER & "\c$\CGIAPPS\AdvFormsModule\ProcessingCenter\Main\output\JETPDF\RQ\attachments\!RQ_attachment_indexes_DIP.txt", strDIPTarget
+      
+           
+      strNCPFolder = strDIPTarget & "NCP\"  & pToday_8_6_Folder & "\"
+      If Not objFSO.FolderExists(strNCPFolder) Then
+        Set objNewFolder = objFSO.CreateFolder(strNCPFolder)
+        If Err.Number <> 0 Then WriteLog(Err.Description)
+      End If
+
+      objFSO.CopyFile "\\" & strPRINT_SERVER & "\c$\CGIAPPS\AdvFormsModule\ProcessingCenter\Main\output\JETPDF\DO\DO_DIP.txt", strNCPFolder
+      
+      If Err.Number <> 0 Then WriteLog(Err.Description)
+      
+      objFSO.CopyFile "\\" & strPRINT_SERVER & "\c$\CGIAPPS\AdvFormsModule\ProcessingCenter\Main\output\JETPDF\PO\PO_DIP.txt", strNCPFolder
+      objFSO.CopyFile "\\" & strPRINT_SERVER & "\c$\CGIAPPS\AdvFormsModule\ProcessingCenter\Main\output\JETPDF\MA\MA_DIP.txt", strNCPFolder
+      objFSO.CopyFile "\\" & strPRINT_SERVER & "\c$\CGIAPPS\AdvFormsModule\ProcessingCenter\Main\output\JETPDF\DO\RC\RC_DO_DIP.txt", strNCPFolder
+      objFSO.CopyFile "\\" & strPRINT_SERVER & "\c$\CGIAPPS\AdvFormsModule\ProcessingCenter\Main\output\JETPDF\PO\RC\RC_PO_DIP.txt", strNCPFolder
+      objFSO.CopyFile "\\" & strPRINT_SERVER & "\c$\CGIAPPS\AdvFormsModule\ProcessingCenter\Main\output\JETPDF\DO\attachments\!DO_attachment_indexes_DIP.txt", strNCPFolder
+      objFSO.CopyFile "\\" & strPRINT_SERVER & "\c$\CGIAPPS\AdvFormsModule\ProcessingCenter\Main\output\JETPDF\PO\attachments\!PO_attachment_indexes_DIP.txt", strNCPFolder
+      objFSO.CopyFile "\\" & strPRINT_SERVER & "\c$\CGIAPPS\AdvFormsModule\ProcessingCenter\Main\output\JETPDF\MA\attachments\!MA_attachment_indexes_DIP.txt", strNCPFolder
+      objFSO.CopyFile "\\" & strPRINT_SERVER & "\c$\CGIAPPS\AdvFormsModule\ProcessingCenter\Main\output\JETPDF\RQ\attachments\!RQ_attachment_indexes_DIP.txt", strNCPFolder      
+      
+      On Error Goto 0
+    
+    End Sub
+    
+    Sub WriteHeaderDIP(pFileHandle)
+    
+      pFileHandle.WriteLine(">>>>Self Configuring Tagged DIP<<<<")
+      pFileHandle.WriteLine(">>Dummy Key: Generated by: D:/Scripts/ERP/wsf/" & scriptname)
+      pFileHandle.WriteLine(">>Dummy Key: Version: 1.00")
+      pFileHandle.WriteLine(">>Dummy Key: Generated on: " & FormatDateTime(Now()))
+      pFileHandle.WriteLine(">>Dummy Key: Executed by: " & GetUsername())
+      pFileHandle.WriteLine(">>Dummy Key: Log: " & logname)
+      pFileHandle.WriteLine(">>Dummy Key: See the bottom of this file for the total number of documents.")
+    
+    End Sub  
+          
+    Sub WriteAttachmentHeaderDIP(pFileHandle)
+    
+      pFileHandle.WriteLine(">>>>Self Configuring Tagged DIP<<<<")
+      pFileHandle.WriteLine(">>Dummy Key: Generated by: D:/Scripts/ERP/wsf/" & scriptname)
+      pFileHandle.WriteLine(">>Dummy Key: Generated on: " & FormatDateTime(Now()))
+      pFileHandle.WriteLine(">>Dummy Key: Executed by: " & GetUsername())
+      pFileHandle.WriteLine(">>Dummy Key: Log: " & logname)
+      pFileHandle.WriteLine(">>Dummy Key: See the bottom of this file for the total number of documents.")
+      pFileHandle.WriteLine(">>Dummy Key: If the dummy keyword 'Document #' and total number of documents listed at")
+      pFileHandle.WriteLine(">>Dummy Key: the bottom of this file are not equal, it means attachments")
+      pFileHandle.WriteLine(">>Dummy Key: were skipped because it detected they were already in OnBase.")
+      pFileHandle.WriteLine(">>Dummy Key: 'Advantage Attachment Status' values are defined in FINPROD.CVL_OBJ_ATT_ST")
+      pFileHandle.WriteLine(">>Dummy Key: 'Advantage Attachment Type' values are defined in FINPROD.CVL_OBJ_ATT_TYP")
+
+    End Sub    
+          
+    Sub WriteFooterDIP(pDocumentCount, pFileHandle)
+    
+      pFileHandle.WriteLine(">>Dummy Key: There are a total of " & pDocumentCount & " documents in this file.")
+      If pDocumentCount = 0 Then
+        pFileHandle.WriteLine("BEGIN:")
+      End If      
+      pFileHandle.WriteLine("END:")
+    
+    End Sub
+      
+    Sub WriteHeaderIDX(pFileHandle)
+      pFileHandle.WriteLine("File written: " & Now())
+      pFileHandle.WriteLine("<START_OF_FILE>")
+    End Sub
+
+    Sub WriteFooterIDX(pFileHandle)
+      pFileHandle.WriteLine("<END_OF_FILE>")
+    End Sub     
+      
+    Function GetVCPrintFlag(pDOC_CD, pDOC_DEPT_CD, pDOC_ID, pDOC_VERS_NO)  
+      Dim strVC_PRINT, strSQL, objRS4, intCount
+      strVC_PRINT = "YES"
+      
+      If strSUPPRESS_CONFIRMATION_ONLY = "NO" Then
+        strSQL = "SELECT COUNT(*) AS NUM_REC FROM O_FINPROD.R_PRCU_PRNT_HIST " &_
+                "WHERE DOC_ID = '" & pDOC_ID & "' AND DOC_VERS_NO = " & pDOC_VERS_NO & " AND PRNT_TYP = 'REPRINT'"
+        Set objRS4     = objConn.Execute(strSQL)         
+        Do While Not objRS4.EOF
+          intCount = objRS4.Fields("NUM_REC").Value
+          objRS4.MoveNext
+        Loop
+        If intCount >= 1 Then
+          strVC_PRINT = "NO"
+          WriteLog("CONFIRMATION ONLY - [" & pDOC_CD & " " & pDOC_DEPT_CD & " " & pDOC_ID & " - " & pDOC_VERS_NO & "]")
+        End If
+        objRS4.Close
+        Set objRS4       = Nothing
+      End If
+      
+      GetVCPrintFlag   = strVC_PRINT
+      
+    End Function
+
+    Function GetRandomHexValue()
+      Dim strHex, intHigh, intLow, intNumber
+    
+      intHigh = 1048575
+      intLow  = 65536
+      strHex  = ""
+      
+      Randomize
+    
+      intNumber           = Int((intHigh - intLow + 1) * Rnd + intLow)
+      strHex               = LCase(CStr(Hex(intNumber)))
+      
+      GetRandomHexValue   = strHex  
+        
+    End Function
+      
+    Sub LoadCompareFiles(pPath, pobjCompare)
+      
+      Set objFolder1 = objFSO.GetFolder(pPath)
+      Set objFileCol1 = objFolder1.Files
+      For Each objFile1 In objFileCol1
+        intPos         = InStrRev(objFile1.Name, "_[")
+        If intPos > 0 Then
+          strFileName   = Mid(CStr(objFile1.Name), 1, intPos - 1)
+          If Not pobjCompare.Exists(strFileName) Then  
+            pobjCompare.Add strFileName, strFileName
+          End If
+        End If
+      Next
+      Set objFolder1 = Nothing
+      Set objFileCol1 = Nothing
+      
+    End Sub
+      
+    Function GetFileTypeNum(pFileName)
+      Dim intPos, strFileTypeNum
+      intFileTypeNum = 1
+      intPos = InStrRev(pFileName, ".")
+      If intPos > 0 Then
+        Select Case LCase(Mid(pFileName, intPos + 1))
+          Case "pdf"
+            intFileTypeNum = 16
+          Case "xls", "xlsx"
+            intFileTypeNum = 13
+          Case "rtf"
+            intFileTypeNum = 15
+          Case "doc", "docx"
+            intFileTypeNum = 12
+        End Select
+      End If
+      GetFileTypeNum = intFileTypeNum
+    End Function
+      
+    Function NoNull(pData)
+      If IsNull(pData) Then
+        pData = ""
+      End If
+      NoNull = pData
+    End Function
+      
+    Function PadDate(pInData)
+      Dim strOutData
+      On Error Resume Next
+      strElem = Split(pInData, "/")
+      If Len(strElem(2)) = 2 Then
+        strElem(2) = "20" & strElem(2)
+      End If
+      strOutData = PadString(strElem(0), 2, "R", "0") & "/" & PadString(strElem(1), 2, "R", "0") & "/" & strElem(2)
+      If Err.Number <> 0 Then
+        strOutData = pInData
+        Err.Clear
+      End If
+      On Error Goto 0
+      PadDate = strOutData
+    End Function
+
+    Function GetLoadFolder()
+    
+      strList    = "\\" & strPRINT_SERVER & "\c$\CGIAPPS\Adobe\Central\Server\data\PDF\NCP\dirlist.txt"
+  
+      strFolder = ""
+
+      If objFSO.FileExists(strList) Then
+      
+        Set objInFile = objFSO.OpenTextFile(strList, 1, False)
+        Do While Not objInFile.AtEndOfStream
+          strFolder = Replace(objInFile.ReadLine, vbCRLF, "")
+          Exit Do
+        Loop
+        
+        objInFile.Close
+      
+        Set objInFile = Nothing
+
+      End If
+      
+      GetLoadFolder = strFolder
+    
+    End Function
+    
+    '*****************************************************************************************
+    '** LINE HEIGHT CALCULATIONS    - not in use                                             *
+    '**             µ    |              f                                                     *
+    '**  CPL = w * ---  |   w = CPL * ---                                                    *
+    '**             f   |              µ                                                     *
+    '**                                                                                      *
+    '**                                                                                      *
+    '**  pixels = (points * 96 / 72)      12.7pixels = 9.5pt                                 *
+    '**                                                                                      *
+    '**  CPL = characters per line                                                           *
+    '**  µ   = character constant for the font                                               *
+    '**  f   = font size pixels (or points)             (f) and (w) must be the same units   *
+    '**  w   = total line width in pixels (or points)   (f) and (w) must be the same units   *
+    '**                                                                                      *
+    '**        DO description form field width in pixels = 275                               *
+    '**        MA description form field width in pixels = 457                               *
+    '**        PO description form field width in pixels = 323                               *
+    '**                                                                                      *
+    '**  Character Constants (µ) for various fonts                                           *
+    '**                                                                                      *
+    '**   American Typewriter — 2.09                                                         *
+    '**   Baskerville — 2.51                                                                 *
+    '**   Georgia — 2.27                                                                     *
+    '**   Hoefler Text — 2.39                                                                *
+    '**   Palatino — 2.26                                                                    *
+    '**   Times New Roman — 2.48                                                             *
+    '**   Arial — 2.26                                                                       *
+    '**   Gill Sans — 2.47                                                                   *
+    '**   Gill Sans 300 — 2.58                                                               *
+    '**   Helvetica Neue — 2.24                                                              *
+    '**   Lucida Grande — 2.05                                                               *
+    '**   Tahoma — 2.25                                                                      *
+    '**   Trebuchet MS — 2.2                                                                 *
+    '**   Verdana — 1.96                                                                     *
+    '**   Courier New — 1.67                                                                 *
+    '**                                                                                      *
+    '*****************************************************************************************    
+    
+    
+   </script>
+</job>
