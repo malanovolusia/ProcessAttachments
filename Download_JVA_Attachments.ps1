@@ -23,7 +23,7 @@ Import-Module "\\erp311script\Library\PSM1\ERP_mod_exec.psm1"
 Import-Module "\\erp311script\Library\PSM1\ERP_mod_interface.psm1"
 Import-Module "\\erp311script\Library\PSM1\ERP_mod_reporting.psm1"
 
-$env:ENVIRONMENT = "PROD"
+$env:ENVIRONMENT = "DEV"
 
 if ($env:ENVIRONMENT -eq "PROD") {
     # Production logging handled by module
@@ -128,9 +128,12 @@ ORDER BY b.OBJ_ATT_UNID
             $script:JVAattachCount++
             $fileCount++
 
+            WriteLog "Get-JVAAttachments():Processing attachment #$fileCount"
+
             # Read attachment metadata
             $OBJ_ATT_UNID = $reader["OBJ_ATT_UNID"]
             $fileName = $reader["OBJ_ATT_NM"]
+            
             $blobData = if ($reader["OBJ_ATT_DATA"] -ne [DBNull]::Value) { $reader["OBJ_ATT_DATA"] } else { $null }
             $OBJ_ATT_SG_UNID = if ($reader["OBJ_ATT_SG_UNID"] -ne [DBNull]::Value) { $reader["OBJ_ATT_SG_UNID"] } else { "" }
             $OBJ_ATT_DT = $reader["OBJ_ATT_DT"]
@@ -142,6 +145,8 @@ ORDER BY b.OBJ_ATT_UNID
             $OBJ_ATT_COMP_NM = if ($reader["OBJ_ATT_COMP_NM"] -ne [DBNull]::Value) { $reader["OBJ_ATT_COMP_NM"] } else { "" }
             $OBJ_ATT_COMP_DESC = if ($reader["OBJ_ATT_COMP_DESC"] -ne [DBNull]::Value) { $reader["OBJ_ATT_COMP_DESC"] } else { "" }
 
+            WriteLog "Get-JVAAttachments():Read attachment metadata"
+
             # Generate unique filename with GUID
             $extension = [System.IO.Path]::GetExtension($fileName)
             $baseName = [System.IO.Path]::GetFileNameWithoutExtension($fileName)
@@ -149,9 +154,11 @@ ORDER BY b.OBJ_ATT_UNID
             $fileNameGUID = if ($extension) { "${baseName}_[${guidHex}]${extension}" } else { "${fileName}_[${guidHex}]" }
 
             # Check if attachment already exists in OnBase
+            WriteLog  "Checking OnBase for attachment: $OBJ_ATT_UNID"
             $existsInOnBase = Test-OnBaseAttachmentExists -Connection $OnBaseConnection -AttachmentID $OBJ_ATT_UNID
 
             if (-not $existsInOnBase -and $null -ne $blobData) {
+                WriteLog  "Attachment: $OBJ_ATT_UNID - Does not exist in OnBase"
                 $script:JVAattachTotal++
                 $fullPath = Join-Path $OutPath $fileNameGUID
 
@@ -159,6 +166,7 @@ ORDER BY b.OBJ_ATT_UNID
 
                 # Save attachment to disk
                 $result = Save-BinaryData -FilePath $fullPath -BinaryData $blobData
+                WriteLog "Saved Succesfully"
 
                 if ($result -eq 0) {
                     # Build index entry (CSV format for later DIP creation)
@@ -234,10 +242,10 @@ try {
 
     # Query for JVA documents with attachments
     $jvaQuery = @"
-SELECT DOC_CD, DOC_DEPT_CD, DOC_ID, DOC_VERS_NO, OBJ_ATT_PG_UNID
-FROM O_FINPROD.JV_DOC_HDR
-WHERE OBJ_ATT_PG_UNID IS NOT NULL AND OBJ_ATT_PG_TOT > 0
-ORDER BY DOC_ID, DOC_VERS_NO
+        SELECT DOC_CD, DOC_DEPT_CD, DOC_ID, DOC_VERS_NO, OBJ_ATT_PG_UNID, DOC_CREA_DT
+        FROM O_FINPROD.JV_DOC_HDR
+        WHERE OBJ_ATT_PG_UNID IS NOT NULL AND OBJ_ATT_PG_TOT > 0 AND DOC_CREA_DT > '05-OCT-2025' AND DOC_CD = 'JVA' AND DOC_PHASE_CD = 3
+        ORDER BY DOC_ID, DOC_VERS_NO
 "@
 
 
@@ -259,7 +267,6 @@ ORDER BY DOC_ID, DOC_VERS_NO
         $DOC_VERS_NO = $reader["DOC_VERS_NO"]
         $OBJ_ATT_PG_UNID = $reader["OBJ_ATT_PG_UNID"]
 
-        WriteLog ""
         WriteLog "Processing JVA #$docCount : $DOC_CD $DOC_DEPT_CD $DOC_ID v$DOC_VERS_NO"
 
         # Get attachments for this JVA document
