@@ -77,7 +77,7 @@ function Test-OnBaseAttachmentExists {
     )
     if (-not $CheckDuplicates) { return $false }
     try {
-        $sql = "SELECT COUNT(*) AS NUM_FOUND FROM hsi.keyitem481 WHERE hsi.keyitem481.keyvaluebig = $AttachmentID AND (SELECT itemtypenum FROM hsi.itemdata WHERE hsi.itemdata.itemnum = hsi.keyitem481.itemnum) = 267"
+        $sql = "SELECT COUNT(*) AS NUM_FOUND FROM hsi.keyitem481 WHERE hsi.keyitem481.keyvaluebig = $AttachmentID AND (SELECT itemtypenum FROM hsi.itemdata WHERE hsi.itemdata.itemnum = hsi.keyitem481.itemnum) = 132"
         $cmd = New-Object System.Data.SqlClient.SqlCommand($sql, $Connection)
         $reader = $cmd.ExecuteReader()
         $count = 0
@@ -100,7 +100,9 @@ function Get-JVAAttachments {
         [string]$DOC_VERS_NO,
         [string]$OBJ_ATT_PG_UNID,
         [string]$OutPath,
-        [System.IO.StreamWriter]$IndexFileStream
+        [System.IO.StreamWriter]$IndexFileStream,
+        [string]$CURR_FY,
+        [string]$CURR_PER
     )
 
     $fileCount = 0
@@ -180,7 +182,7 @@ WHERE b.OBJ_ATT_UNID = '$OBJ_ATT_UNID'
                 $result = Save-BinaryData -FilePath $fullPath -BinaryData $blobData
 
                 if ($result -eq 0) {
-                    $indexEntry = "$OBJ_ATT_UNID|$(Format-PadDate $OBJ_ATT_DT)|$fileNameGUID|$fullPath|$OBJ_ATT_USER_ID|$($OBJ_ATT_DSCR -replace "`r`n", " ")|$DOC_ID|$DOC_DEPT_CD|$DOC_ID|JV|$DOC_CD|$DOC_VERS_NO|$OBJ_ATT_SG_UNID|$OBJ_ATT_SEQ_NO|$OBJ_ATT_ST|$OBJ_ATT_TYP|$OBJ_ATT_COMP_NM|$OBJ_ATT_COMP_DESC|$fileName"
+                    $indexEntry = "$OBJ_ATT_UNID|$(Format-PadDate $OBJ_ATT_DT)|$fileNameGUID|$fullPath|$OBJ_ATT_USER_ID|$($OBJ_ATT_DSCR -replace "`r`n", " ")|$DOC_ID|$DOC_DEPT_CD|$DOC_ID|JV|$DOC_CD|$DOC_VERS_NO|$OBJ_ATT_SG_UNID|$OBJ_ATT_SEQ_NO|$OBJ_ATT_ST|$OBJ_ATT_TYP|$OBJ_ATT_COMP_NM|$OBJ_ATT_COMP_DESC|$fileName|$CURR_FY|$CURR_PER"
                     $IndexFileStream.WriteLine($indexEntry)
                 }
             }
@@ -200,7 +202,7 @@ try {
     CreateGlobalVariables $PSCommandPath $PSScriptRoot
     
     $SID = "ERP19PRO"
-    $OutputPath = "N:\Projects\35442 - JVA DIP\ProcessAttachments\Attachments"
+    $OutputPath = "\\dlerp311birt\ProcessingCenter\Main\output\JETPDF\JVA\attachments"
     $CheckDuplicates = $true
 
     WriteLog("Log Files Named")
@@ -237,17 +239,17 @@ try {
     $indexFileStream = New-Object System.IO.StreamWriter($indexFilePath, $false, [System.Text.Encoding]::UTF8)
 
     # Write index header
-    $indexFileStream.WriteLine("OBJ_ATT_UNID|ATT_DATE|GUID_FILENAME|FULL_PATH|USER_ID|DESCRIPTION|DOC_ID|DEPT_CD|DOC_ID_OUT|DOC_TYP|DOC_CD|VERS_NO|SG_UNID|SEQ_NO|STATUS|TYPE|COMP_NM|COMP_DESC|ORIGINAL_FILENAME")
+    $indexFileStream.WriteLine("OBJ_ATT_UNID|ATT_DATE|GUID_FILENAME|FULL_PATH|USER_ID|DESCRIPTION|DOC_ID|DEPT_CD|DOC_ID_OUT|DOC_TYP|DOC_CD|VERS_NO|SG_UNID|SEQ_NO|STATUS|TYPE|COMP_NM|COMP_DESC|ORIGINAL_FILENAME|CURR_FY|CURR_PER")
 
     WriteLog "Index file: $indexFilePath"
 
     # Query for JVA documents with attachments
     $jvaQuery = @"
-        SELECT DOC_CD, DOC_DEPT_CD, DOC_ID, DOC_VERS_NO, OBJ_ATT_PG_UNID, DOC_CREA_DT
+        SELECT DOC_CD, DOC_DEPT_CD, DOC_ID, DOC_VERS_NO, OBJ_ATT_PG_UNID, DOC_CREA_DT, CURR_FY, CURR_PER
         FROM O_FINPROD.JV_DOC_HDR
         WHERE OBJ_ATT_PG_UNID IS NOT NULL AND OBJ_ATT_PG_TOT > 0 AND DOC_CREA_DT > '05-OCT-2025' AND DOC_CD = 'JVA' AND DOC_PHASE_CD = 3
         ORDER BY DOC_ID, DOC_VERS_NO
-        FETCH FIRST 1 ROW ONLY
+        FETCH FIRST 10 ROW ONLY
 "@
 
 
@@ -268,8 +270,10 @@ try {
         $DOC_ID = $reader["DOC_ID"]
         $DOC_VERS_NO = $reader["DOC_VERS_NO"]
         $OBJ_ATT_PG_UNID = $reader["OBJ_ATT_PG_UNID"]
+        $CURR_FY = if ($reader["CURR_FY"] -ne [DBNull]::Value) { $reader["CURR_FY"] } else { "" }
+        $CURR_PER = if ($reader["CURR_PER"] -ne [DBNull]::Value) { $reader["CURR_PER"] } else { "" }
 
-        WriteLog "Processing JVA #$docCount : $DOC_CD $DOC_DEPT_CD $DOC_ID v$DOC_VERS_NO"
+        WriteLog "Processing JVA #$docCount : $DOC_CD $DOC_DEPT_CD $DOC_ID v$DOC_VERS_NO (FY: $CURR_FY, PER: $CURR_PER)"
 
         # Get attachments for this JVA document
         Get-JVAAttachments `
@@ -281,7 +285,9 @@ try {
             -DOC_VERS_NO $DOC_VERS_NO `
             -OBJ_ATT_PG_UNID $OBJ_ATT_PG_UNID `
             -OutPath $OutputPath `
-            -IndexFileStream $indexFileStream
+            -IndexFileStream $indexFileStream `
+            -CURR_FY $CURR_FY `
+            -CURR_PER $CURR_PER
     }
 
     $reader.Close()
