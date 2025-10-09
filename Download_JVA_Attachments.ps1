@@ -105,90 +105,91 @@ function Get-JVAAttachments {
 
     $fileCount = 0
 
-    # SQL to retrieve attachments for JVA documents
-    $sql = @"
-SELECT a.OBJ_ATT_UNID, a.OBJ_ATT_NM, b.OBJ_ATT_DATA, a.OBJ_ATT_SG_UNID, a.OBJ_ATT_DT, a.OBJ_ATT_USER_ID, a.OBJ_ATT_DSCR,
+    # First query: Get metadata WITHOUT blob data
+    $sqlMetadata = @"
+SELECT a.OBJ_ATT_UNID, a.OBJ_ATT_NM, a.OBJ_ATT_SG_UNID, a.OBJ_ATT_DT, a.OBJ_ATT_USER_ID, a.OBJ_ATT_DSCR,
        a.OBJ_ATT_SEQ_NO, a.OBJ_ATT_ST, a.OBJ_ATT_TYP, a.OBJ_ATT_COMP_NM, a.OBJ_ATT_COMP_DESC, a.OBJ_ATT_DEL_USID, a.OBJ_ATT_DEL_DT
-FROM O_FINPROD.IN_OBJ_ATT_CTLG a, O_FINPROD.IN_OBJ_ATT_STOR b, O_FINPROD.IN_OBJ_ATT_DOC_REF c
-WHERE a.OBJ_ATT_UNID = b.OBJ_ATT_UNID(+) AND a.OBJ_ATT_UNID = c.OBJ_ATT_UNID
+FROM O_FINPROD.IN_OBJ_ATT_CTLG a, O_FINPROD.IN_OBJ_ATT_DOC_REF c
+WHERE a.OBJ_ATT_UNID = c.OBJ_ATT_UNID
   AND a.OBJ_ATT_PG_UNID = '$OBJ_ATT_PG_UNID' AND c.DOC_TYP = 'JV' AND c.DOC_CD = '$DOC_CD'
   AND c.DOC_ID = '$DOC_ID' AND c.DOC_VERS_NO <= $DOC_VERS_NO
-ORDER BY b.OBJ_ATT_UNID
+ORDER BY a.OBJ_ATT_UNID
 "@
 
+    $cmd = New-Object System.Data.Odbc.OdbcCommand($sqlMetadata, $ERPConnection)
+    $cmd.CommandTimeout = 120
+    $reader = $cmd.ExecuteReader()
 
-    WriteLog "Get-JVAAttachments():Running SQL: $sql"
+    while ($reader.Read()) {
+        $script:JVAattachCount++
+        $fileCount++
 
-    try {
-        $cmd = New-Object System.Data.Odbc.OdbcCommand($sql, $ERPConnection)
-        $cmd.CommandTimeout = 120
-        $reader = $cmd.ExecuteReader()
+        $OBJ_ATT_UNID = $reader["OBJ_ATT_UNID"]
+        $fileName = $reader["OBJ_ATT_NM"]
+        
+        # Check OnBase FIRST before pulling blob
+        $existsInOnBase = Test-OnBaseAttachmentExists -Connection $OnBaseConnection -AttachmentID $OBJ_ATT_UNID
 
-        while ($reader.Read()) {
-            $script:JVAattachCount++
-            $fileCount++
+        if ($existsInOnBase) {
+            WriteLog "JVA $DOC_DEPT_CD $DOC_ID [v$DOC_VERS_NO] Attachment already in OnBase: [$OBJ_ATT_UNID] $fileName"
+            continue
+        }
 
-            WriteLog "Get-JVAAttachments():Processing attachment #$fileCount"
+        # Only NOW retrieve the blob data for this specific attachment
+        $sqlBlob = @"
+SELECT b.OBJ_ATT_DATA
+FROM O_FINPROD.IN_OBJ_ATT_STOR b
+WHERE b.OBJ_ATT_UNID = '$OBJ_ATT_UNID'
+"@
 
-            # Read attachment metadata
-            $OBJ_ATT_UNID = $reader["OBJ_ATT_UNID"]
-            $fileName = $reader["OBJ_ATT_NM"]
-            
-            $blobData = if ($reader["OBJ_ATT_DATA"] -ne [DBNull]::Value) { $reader["OBJ_ATT_DATA"] } else { $null }
-            $OBJ_ATT_SG_UNID = if ($reader["OBJ_ATT_SG_UNID"] -ne [DBNull]::Value) { $reader["OBJ_ATT_SG_UNID"] } else { "" }
-            $OBJ_ATT_DT = $reader["OBJ_ATT_DT"]
-            $OBJ_ATT_USER_ID = if ($reader["OBJ_ATT_USER_ID"] -ne [DBNull]::Value) { $reader["OBJ_ATT_USER_ID"] } else { "" }
-            $OBJ_ATT_DSCR = if ($reader["OBJ_ATT_DSCR"] -ne [DBNull]::Value) { $reader["OBJ_ATT_DSCR"] } else { "" }
-            $OBJ_ATT_SEQ_NO = if ($reader["OBJ_ATT_SEQ_NO"] -ne [DBNull]::Value) { $reader["OBJ_ATT_SEQ_NO"] } else { 0 }
-            $OBJ_ATT_ST = if ($reader["OBJ_ATT_ST"] -ne [DBNull]::Value) { $reader["OBJ_ATT_ST"] } else { 0 }
-            $OBJ_ATT_TYP = if ($reader["OBJ_ATT_TYP"] -ne [DBNull]::Value) { $reader["OBJ_ATT_TYP"] } else { 0 }
-            $OBJ_ATT_COMP_NM = if ($reader["OBJ_ATT_COMP_NM"] -ne [DBNull]::Value) { $reader["OBJ_ATT_COMP_NM"] } else { "" }
-            $OBJ_ATT_COMP_DESC = if ($reader["OBJ_ATT_COMP_DESC"] -ne [DBNull]::Value) { $reader["OBJ_ATT_COMP_DESC"] } else { "" }
+        $cmdBlob = New-Object System.Data.Odbc.OdbcCommand($sqlBlob, $ERPConnection)
+        $cmdBlob.CommandTimeout = 120
+        $readerBlob = $cmdBlob.ExecuteReader()
 
-            WriteLog "Get-JVAAttachments():Read attachment metadata"
+        if ($readerBlob.Read()) {
+            $blobData = if ($readerBlob["OBJ_ATT_DATA"] -ne [DBNull]::Value) { 
+                $readerBlob["OBJ_ATT_DATA"] 
+            } else { 
+                $null 
+            }
 
-            # Generate unique filename with GUID
-            $extension = [System.IO.Path]::GetExtension($fileName)
-            $baseName = [System.IO.Path]::GetFileNameWithoutExtension($fileName)
-            $guidHex = Get-RandomHexValue
-            $fileNameGUID = if ($extension) { "${baseName}_[${guidHex}]${extension}" } else { "${fileName}_[${guidHex}]" }
-
-            # Check if attachment already exists in OnBase
-            WriteLog  "Checking OnBase for attachment: $OBJ_ATT_UNID"
-            $existsInOnBase = Test-OnBaseAttachmentExists -Connection $OnBaseConnection -AttachmentID $OBJ_ATT_UNID
-
-            if (-not $existsInOnBase -and $null -ne $blobData) {
-                WriteLog  "Attachment: $OBJ_ATT_UNID - Does not exist in OnBase"
+            if ($null -ne $blobData) {
                 $script:JVAattachTotal++
+                
+                # Read other metadata from outer reader
+                $OBJ_ATT_SG_UNID = if ($reader["OBJ_ATT_SG_UNID"] -ne [DBNull]::Value) { $reader["OBJ_ATT_SG_UNID"] } else { "" }
+                $OBJ_ATT_DT = $reader["OBJ_ATT_DT"]
+                $OBJ_ATT_USER_ID = if ($reader["OBJ_ATT_USER_ID"] -ne [DBNull]::Value) { $reader["OBJ_ATT_USER_ID"] } else { "" }
+                $OBJ_ATT_DSCR = if ($reader["OBJ_ATT_DSCR"] -ne [DBNull]::Value) { $reader["OBJ_ATT_DSCR"] } else { "" }
+                $OBJ_ATT_SEQ_NO = if ($reader["OBJ_ATT_SEQ_NO"] -ne [DBNull]::Value) { $reader["OBJ_ATT_SEQ_NO"] } else { 0 }
+                $OBJ_ATT_ST = if ($reader["OBJ_ATT_ST"] -ne [DBNull]::Value) { $reader["OBJ_ATT_ST"] } else { 0 }
+                $OBJ_ATT_TYP = if ($reader["OBJ_ATT_TYP"] -ne [DBNull]::Value) { $reader["OBJ_ATT_TYP"] } else { 0 }
+                $OBJ_ATT_COMP_NM = if ($reader["OBJ_ATT_COMP_NM"] -ne [DBNull]::Value) { $reader["OBJ_ATT_COMP_NM"] } else { "" }
+                $OBJ_ATT_COMP_DESC = if ($reader["OBJ_ATT_COMP_DESC"] -ne [DBNull]::Value) { $reader["OBJ_ATT_COMP_DESC"] } else { "" }
+
+                # Generate filename
+                $extension = [System.IO.Path]::GetExtension($fileName)
+                $baseName = [System.IO.Path]::GetFileNameWithoutExtension($fileName)
+                $guidHex = Get-RandomHexValue
+                $fileNameGUID = if ($extension) { "${baseName}_[${guidHex}]${extension}" } else { "${fileName}_[${guidHex}]" }
+                
                 $fullPath = Join-Path $OutPath $fileNameGUID
 
                 WriteLog "JVA $DOC_DEPT_CD $DOC_ID [v$DOC_VERS_NO] Saving attachment: [$fileCount] [$OBJ_ATT_UNID] $fileNameGUID"
 
-                # Save attachment to disk
                 $result = Save-BinaryData -FilePath $fullPath -BinaryData $blobData
-                WriteLog "Saved Succesfully"
 
                 if ($result -eq 0) {
-                    # Build index entry (CSV format for later DIP creation)
                     $indexEntry = "$OBJ_ATT_UNID|$(Format-PadDate $OBJ_ATT_DT)|$fileNameGUID|$fullPath|$OBJ_ATT_USER_ID|$($OBJ_ATT_DSCR -replace "`r`n", " ")|$DOC_ID|$DOC_DEPT_CD|$DOC_ID|JV|$DOC_CD|$DOC_VERS_NO|$OBJ_ATT_SG_UNID|$OBJ_ATT_SEQ_NO|$OBJ_ATT_ST|$OBJ_ATT_TYP|$OBJ_ATT_COMP_NM|$OBJ_ATT_COMP_DESC|$fileName"
                     $IndexFileStream.WriteLine($indexEntry)
                 }
-            } elseif ($existsInOnBase -and $null -ne $blobData) {
-                WriteLog "JVA $DOC_DEPT_CD $DOC_ID [v$DOC_VERS_NO] Attachment already in OnBase: [$OBJ_ATT_UNID] $fileName"
-            } elseif ($null -eq $blobData) {
-                WriteLog "DELETED ATTACHMENT [$OBJ_ATT_UNID] $fileName"
             }
         }
 
-        $reader.Close()
-
-        if ($fileCount -eq 0) {
-            WriteLog "* No attachments found for JVA $DOC_DEPT_CD $DOC_ID - $DOC_VERS_NO"
-        }
-
-    } catch {
-        WriteLog "Error retrieving attachments: $_"
+        $readerBlob.Close()
     }
+
+    $reader.Close()
 }
 
 #endregion
@@ -246,6 +247,7 @@ try {
         FROM O_FINPROD.JV_DOC_HDR
         WHERE OBJ_ATT_PG_UNID IS NOT NULL AND OBJ_ATT_PG_TOT > 0 AND DOC_CREA_DT > '05-OCT-2025' AND DOC_CD = 'JVA' AND DOC_PHASE_CD = 3
         ORDER BY DOC_ID, DOC_VERS_NO
+        FETCH FIRST 1 ROW ONLY
 "@
 
 
