@@ -92,6 +92,7 @@ try {
     # Check if index file exists
     if (-not (Test-Path $IndexFilePath)) {
         WriteLog "ERROR: Index file not found at: $IndexFilePath"
+
         exit 1
     }
 
@@ -106,11 +107,17 @@ try {
     WriteLog "Connected to OnBase database"
 
     # Read index file
-    $indexLines = Get-Content $IndexFilePath
+    $indexLines = @(Get-Content $IndexFilePath)
     if ($indexLines.Length -lt 2) {
         WriteLog "ERROR: Index file is empty or has no data rows"
         $onbaseConnection.Close()
-        exit 1
+
+        $strSub = "JVA Attachment Processing Validation (No new JVA Attachments found to validate) - INFO "
+        $strMsg = "No new JVA Attachments found to validate in OnBase.<br><br>"
+
+        NotifyCustom -Subject $strSub -Message $strMsg -Target $emailString -Attachment1 "" -Attachment2 ""
+
+        exit 0
     }
 
     $headerLine = $indexLines[0]
