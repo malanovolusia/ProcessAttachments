@@ -62,6 +62,108 @@ function Save-BinaryData {
     }
 }
 
+<#
+.SYNOPSIS
+    Downloads a single BLOB from Oracle using chunked streaming.
+
+.DESCRIPTION
+    Uses ODBC DataReader.GetBytes() to stream BLOB data in chunks,
+    avoiding memory issues and Oracle RAW/VARCHAR limits.
+#>
+function Download-BlobChunked {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)]
+        [System.Data.Odbc.OdbcConnection]$Connection,
+
+        [Parameter(Mandatory=$true)]
+        [long]$UNID,
+
+        [Parameter(Mandatory=$true)]
+        [string]$OutputFile,
+
+        [Parameter(Mandatory=$false)]
+        [long]$ExpectedSize = 0,
+
+        [Parameter(Mandatory=$false)]
+        [int]$ChunkSize = 16000
+    )
+
+    $result = @{
+        Success = $false
+        BytesDownloaded = 0
+        ElapsedSeconds = 0
+        SpeedKBps = 0
+        Error = $null
+    }
+
+    $fileStream = $null
+    $reader = $null
+    $startTime = Get-Date
+
+    try {
+        # Query to get the BLOB column
+        $blobQuery = @"
+SELECT b.OBJ_ATT_DATA
+FROM O_FINPROD.IN_OBJ_ATT_STOR b
+WHERE b.OBJ_ATT_UNID = $UNID
+"@
+
+        $blobCmd = New-Object System.Data.Odbc.OdbcCommand($blobQuery, $Connection)
+        $blobCmd.CommandTimeout = 300
+        $reader = $blobCmd.ExecuteReader([System.Data.CommandBehavior]::SequentialAccess)
+
+        if ($reader.Read()) {
+            # Check if the blob is not null
+            if (-not $reader.IsDBNull(0)) {
+                $fileStream = [System.IO.File]::Create($OutputFile)
+
+                # Read the BLOB in chunks using GetBytes
+                $buffer = New-Object byte[] $ChunkSize
+                $fieldOffset = 0  # Position in the BLOB field
+
+                while ($true) {
+                    # GetBytes(ordinal, fieldOffset, buffer, bufferOffset, length)
+                    $bytesRead = $reader.GetBytes(0, $fieldOffset, $buffer, 0, $ChunkSize)
+
+                    if ($bytesRead -eq 0) {
+                        break  # No more data
+                    }
+
+                    # Write the chunk to file
+                    $fileStream.Write($buffer, 0, $bytesRead)
+                    $result.BytesDownloaded += $bytesRead
+                    $fieldOffset += $bytesRead
+                }
+
+                $result.Success = $true
+
+            } else {
+                $result.Error = "BLOB data is NULL"
+            }
+        } else {
+            $result.Error = "No record found for UNID $UNID"
+        }
+
+    } catch {
+        $result.Error = $_.Exception.Message
+    } finally {
+        if ($reader -ne $null) { $reader.Close() }
+        if ($fileStream -ne $null) {
+            $fileStream.Close()
+            $fileStream.Dispose()
+        }
+
+        $elapsed = (Get-Date) - $startTime
+        $result.ElapsedSeconds = $elapsed.TotalSeconds
+        $result.SpeedKBps = if ($elapsed.TotalSeconds -gt 0) {
+            [math]::Round(($result.BytesDownloaded / 1024) / $elapsed.TotalSeconds, 2)
+        } else { 0 }
+    }
+
+    return $result
+}
+
 function Format-PadDate {
     param([object]$DateValue)
     if ($null -eq $DateValue -or $DateValue -eq [DBNull]::Value) { return "" }
@@ -140,62 +242,44 @@ ORDER BY a.OBJ_ATT_UNID
             continue
         }
 
-        # Only NOW retrieve the blob data for this specific attachment
-        $sqlBlob = @"
-SELECT b.OBJ_ATT_DATA
-FROM O_FINPROD.IN_OBJ_ATT_STOR b
-WHERE b.OBJ_ATT_UNID = '$OBJ_ATT_UNID'
-"@
+        # Read metadata from outer reader
+        $OBJ_ATT_SG_UNID = if ($reader["OBJ_ATT_SG_UNID"] -ne [DBNull]::Value) { $reader["OBJ_ATT_SG_UNID"] } else { "" }
+        $OBJ_ATT_DT = $reader["OBJ_ATT_DT"]
+        $OBJ_ATT_USER_ID = if ($reader["OBJ_ATT_USER_ID"] -ne [DBNull]::Value) { $reader["OBJ_ATT_USER_ID"] } else { "" }
+        $OBJ_ATT_DSCR = if ($reader["OBJ_ATT_DSCR"] -ne [DBNull]::Value) { $reader["OBJ_ATT_DSCR"] } else { "" }
+        $OBJ_ATT_SEQ_NO = if ($reader["OBJ_ATT_SEQ_NO"] -ne [DBNull]::Value) { $reader["OBJ_ATT_SEQ_NO"] } else { 0 }
+        $OBJ_ATT_ST = if ($reader["OBJ_ATT_ST"] -ne [DBNull]::Value) { $reader["OBJ_ATT_ST"] } else { 0 }
+        $OBJ_ATT_TYP = if ($reader["OBJ_ATT_TYP"] -ne [DBNull]::Value) { $reader["OBJ_ATT_TYP"] } else { 0 }
+        $OBJ_ATT_COMP_NM = if ($reader["OBJ_ATT_COMP_NM"] -ne [DBNull]::Value) { $reader["OBJ_ATT_COMP_NM"] } else { "" }
+        $OBJ_ATT_COMP_DESC = if ($reader["OBJ_ATT_COMP_DESC"] -ne [DBNull]::Value) { $reader["OBJ_ATT_COMP_DESC"] } else { "" }
 
-        $cmdBlob = New-Object System.Data.Odbc.OdbcCommand($sqlBlob, $ERPConnection)
-        $cmdBlob.CommandTimeout = 120
-        $readerBlob = $cmdBlob.ExecuteReader()
+        # Generate filename
+        $extension = [System.IO.Path]::GetExtension($fileName)
+        $baseName = [System.IO.Path]::GetFileNameWithoutExtension($fileName)
+        $guidHex = Get-RandomHexValue
+        $fileNameGUID = if ($extension) { "${baseName}_[${guidHex}]${extension}" } else { "${fileName}_[${guidHex}]" }
 
-        if ($readerBlob.Read()) {
-            $blobData = if ($readerBlob["OBJ_ATT_DATA"] -ne [DBNull]::Value) { 
-                $readerBlob["OBJ_ATT_DATA"] 
-            } else { 
-                $null 
-            }
+        $fullPath = Join-Path $OutPath $fileNameGUID
 
-            if ($null -ne $blobData) {
-                $script:JVAattachTotal++
-                
-                # Read other metadata from outer reader
-                $OBJ_ATT_SG_UNID = if ($reader["OBJ_ATT_SG_UNID"] -ne [DBNull]::Value) { $reader["OBJ_ATT_SG_UNID"] } else { "" }
-                $OBJ_ATT_DT = $reader["OBJ_ATT_DT"]
-                $OBJ_ATT_USER_ID = if ($reader["OBJ_ATT_USER_ID"] -ne [DBNull]::Value) { $reader["OBJ_ATT_USER_ID"] } else { "" }
-                $OBJ_ATT_DSCR = if ($reader["OBJ_ATT_DSCR"] -ne [DBNull]::Value) { $reader["OBJ_ATT_DSCR"] } else { "" }
-                $OBJ_ATT_SEQ_NO = if ($reader["OBJ_ATT_SEQ_NO"] -ne [DBNull]::Value) { $reader["OBJ_ATT_SEQ_NO"] } else { 0 }
-                $OBJ_ATT_ST = if ($reader["OBJ_ATT_ST"] -ne [DBNull]::Value) { $reader["OBJ_ATT_ST"] } else { 0 }
-                $OBJ_ATT_TYP = if ($reader["OBJ_ATT_TYP"] -ne [DBNull]::Value) { $reader["OBJ_ATT_TYP"] } else { 0 }
-                $OBJ_ATT_COMP_NM = if ($reader["OBJ_ATT_COMP_NM"] -ne [DBNull]::Value) { $reader["OBJ_ATT_COMP_NM"] } else { "" }
-                $OBJ_ATT_COMP_DESC = if ($reader["OBJ_ATT_COMP_DESC"] -ne [DBNull]::Value) { $reader["OBJ_ATT_COMP_DESC"] } else { "" }
+        WriteLog "JVA $DOC_DEPT_CD $DOC_ID [v$DOC_VERS_NO] Downloading attachment: [$fileCount] [$OBJ_ATT_UNID] $fileNameGUID"
 
-                # Generate filename
-                $extension = [System.IO.Path]::GetExtension($fileName)
-                $baseName = [System.IO.Path]::GetFileNameWithoutExtension($fileName)
-                $guidHex = Get-RandomHexValue
-                $fileNameGUID = if ($extension) { "${baseName}_[${guidHex}]${extension}" } else { "${fileName}_[${guidHex}]" }
-                
-                $fullPath = Join-Path $OutPath $fileNameGUID
+        # Use FAST chunked download method
+        $downloadResult = Download-BlobChunked -Connection $ERPConnection -UNID $OBJ_ATT_UNID -OutputFile $fullPath -ChunkSize 16000
 
-                WriteLog "JVA $DOC_DEPT_CD $DOC_ID [v$DOC_VERS_NO] Saving attachment: [$fileCount] [$OBJ_ATT_UNID] $fileNameGUID"
+        if ($downloadResult.Success) {
+            $script:JVAattachTotal++
 
-                $result = Save-BinaryData -FilePath $fullPath -BinaryData $blobData
+            $sizeKB = [math]::Round($downloadResult.BytesDownloaded / 1024, 2)
+            $speedKBps = $downloadResult.SpeedKBps
+            WriteLog "JVA $DOC_DEPT_CD $DOC_ID [v$DOC_VERS_NO] SUCCESS: Downloaded $sizeKB KB in $([math]::Round($downloadResult.ElapsedSeconds, 2))s ($speedKBps KB/s)"
 
-                if ($result -eq 0) {
-                    $indexEntry = "$OBJ_ATT_UNID|$(Format-PadDate $OBJ_ATT_DT)|$fileNameGUID|$fullPath|$OBJ_ATT_USER_ID|$($OBJ_ATT_DSCR -replace "`r`n", " ")|$DOC_ID|$DOC_DEPT_CD|$DOC_ID|JV|$DOC_CD|$DOC_VERS_NO|$OBJ_ATT_SG_UNID|$OBJ_ATT_SEQ_NO|$OBJ_ATT_ST|$OBJ_ATT_TYP|$OBJ_ATT_COMP_NM|$OBJ_ATT_COMP_DESC|$fileName|$CURR_FY|$CURR_PER"
-                    $IndexFileStream.WriteLine($indexEntry)
-                }
-            } else {
-                WriteLog "JVA $DOC_DEPT_CD $DOC_ID [v$DOC_VERS_NO] WARNING: Blob data is NULL for attachment: [$OBJ_ATT_UNID] $fileName"
-            }
+            # Write to index file
+            $indexEntry = "$OBJ_ATT_UNID|$(Format-PadDate $OBJ_ATT_DT)|$fileNameGUID|$fullPath|$OBJ_ATT_USER_ID|$($OBJ_ATT_DSCR -replace "`r`n", " ")|$DOC_ID|$DOC_DEPT_CD|$DOC_ID|JV|$DOC_CD|$DOC_VERS_NO|$OBJ_ATT_SG_UNID|$OBJ_ATT_SEQ_NO|$OBJ_ATT_ST|$OBJ_ATT_TYP|$OBJ_ATT_COMP_NM|$OBJ_ATT_COMP_DESC|$fileName|$CURR_FY|$CURR_PER"
+            $IndexFileStream.WriteLine($indexEntry)
         } else {
-            WriteLog "JVA $DOC_DEPT_CD $DOC_ID [v$DOC_VERS_NO] WARNING: No blob record found for attachment: [$OBJ_ATT_UNID] $fileName"
+            $script:JVAattachMissingBlob++
+            WriteLog "JVA $DOC_DEPT_CD $DOC_ID [v$DOC_VERS_NO] ERROR: Failed to download attachment: [$OBJ_ATT_UNID] $fileName - $($downloadResult.Error)"
         }
-
-        $readerBlob.Close()
     }
 
     $reader.Close()
