@@ -59,6 +59,16 @@ function Test-OnBaseAttachmentExists {
 
 try {
     CreateGlobalVariables $PSCommandPath $PSScriptRoot
+
+    $arr_emailList = @(
+        "cbarber@volusia.org",
+        "mconway@volusia.org",
+        "sdesai@volusia.org",
+        "jveresciaka@volusia.org",
+        "mpeterka@volusia.org",
+        "malano@volusia.org"
+    )
+    $emailString = $arr_emailList -join ";"
     
     $AttachmentsPath = "\\dlerp311birt\ProcessingCenter\Main\output\JETPDF\JVA\attachments"
     $IndexFilePath = Join-Path $AttachmentsPath "!JVA_attachment_index.txt"
@@ -109,6 +119,8 @@ try {
     $foundCount = 0
     $notFoundCount = 0
     $errorCount = 0
+    $missingAttachments = @()
+    $errorAttachments = @()
 
     foreach ($line in $dataLines) {
         if ([string]::IsNullOrWhiteSpace($line)) { continue }
@@ -117,6 +129,10 @@ try {
         if ($fields.Length -lt 1) { continue }
 
         $OBJ_ATT_UNID = $fields[0]
+        $DOC_ID = if ($fields.Length -gt 6) { $fields[6] } else { "" }
+        $ORIGINAL_FILENAME = if ($fields.Length -gt 18) { $fields[18] } else { "" }
+        $SEQ_NO = if ($fields.Length -gt 13) { $fields[13] } else { "" }
+
         $validatedCount++
 
         try {
@@ -128,10 +144,27 @@ try {
             } else {
                 $notFoundCount++
                 WriteLog "NOT found in OnBase: $OBJ_ATT_UNID"
+
+                # Store missing attachment details
+                $missingAttachments += [PSCustomObject]@{
+                    OBJ_ATT_UNID = $OBJ_ATT_UNID
+                    DOC_ID = $DOC_ID
+                    SEQ_NO = $SEQ_NO
+                    ORIGINAL_FILENAME = $ORIGINAL_FILENAME
+                }
             }
         } catch {
             $errorCount++
             WriteLog "ERROR validating $OBJ_ATT_UNID : $_"
+
+            # Store error attachment details
+            $errorAttachments += [PSCustomObject]@{
+                OBJ_ATT_UNID = $OBJ_ATT_UNID
+                DOC_ID = $DOC_ID
+                SEQ_NO = $SEQ_NO
+                ORIGINAL_FILENAME = $ORIGINAL_FILENAME
+                ERROR = $_.Exception.Message
+            }
         }
 
         if ($validatedCount % 10 -eq 0) {
@@ -153,8 +186,91 @@ try {
     WriteLog "Errors: $errorCount"
     WriteLog "========================================="
 
-    if ($notFoundCount -gt 0) {
-        WriteLog "WARNING: $notFoundCount attachments were not found in OnBase"
+    if ($notFoundCount -gt 0 -or $errorCount -gt 0) {
+        # Build detailed email message
+        $strMsg = @"
+JVA Attachment Validation Results
+==================================
+
+Summary:
+- Total attachments validated: $validatedCount
+- Found in OnBase: $foundCount
+- NOT found in OnBase: $notFoundCount
+- Errors during validation: $errorCount
+
+"@
+
+        # Add missing attachments details
+        if ($notFoundCount -gt 0) {
+            $strMsg += @"
+
+Missing Attachments ($notFoundCount):
+------------------------------------
+"@
+            foreach ($missing in $missingAttachments) {
+                $strMsg += @"
+
+  OBJ_ATT_UNID: $($missing.OBJ_ATT_UNID)
+  Document ID: $($missing.DOC_ID)
+  Sequence #: $($missing.SEQ_NO)
+  Filename: $($missing.ORIGINAL_FILENAME)
+"@
+            }
+        }
+
+        # Add error attachments details
+        if ($errorCount -gt 0) {
+            $strMsg += @"
+
+
+Validation Errors ($errorCount):
+--------------------------------
+"@
+            foreach ($error in $errorAttachments) {
+                $strMsg += @"
+
+  OBJ_ATT_UNID: $($error.OBJ_ATT_UNID)
+  Document ID: $($error.DOC_ID)
+  Sequence #: $($error.SEQ_NO)
+  Filename: $($error.ORIGINAL_FILENAME)
+  Error: $($error.ERROR)
+"@
+            }
+        }
+
+        $strMsg += @"
+
+
+Please review the log file for complete details: $global:logname
+"@
+
+        $strSub = "JVA Attachment Validation - Issues Found ($notFoundCount missing, $errorCount errors)"
+
+        NotifyCustom -Subject $strSub -Message $strMsg -Target $emailString -Attachment1 "" -Attachment2 ""
+        WriteLog "WARNING: $notFoundCount attachments were not found in OnBase, $errorCount errors occurred"
+    } else {
+        # Send success email
+        $strMsg = @"
+JVA Attachment Validation Results
+==================================
+
+SUCCESS: Attachments validated successfully!
+
+Summary:
+- Total attachments validated: $validatedCount
+- Found in OnBase: $foundCount
+- NOT found in OnBase: 0
+- Errors during validation: 0
+
+All JVA attachments have been successfully validated in OnBase.
+
+Log file: $global:logname
+"@
+
+        $strSub = "JVA Attachment Validation - SUCCESS ($validatedCount attachments validated)"
+
+        NotifyCustom -Subject $strSub -Message $strMsg -Target $emailString -Attachment1 "" -Attachment2 ""
+        WriteLog "SUCCESS: All attachments validated successfully"
     }
 
 } catch {

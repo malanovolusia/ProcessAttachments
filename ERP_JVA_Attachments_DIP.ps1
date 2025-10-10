@@ -226,10 +226,11 @@ END:
         WriteLog "DIP file successfully copied to: $destinationFile"
     } catch {
         WriteLog "ERROR: Failed to copy DIP file to processing path: $_"
-        # Don't exit - the DIP file was created successfully
+        exit 1
     }
 
     WriteLog "DIP file creation completed successfully"
+    exit 0
 
 } catch {
     WriteLog "ERROR: $_"
