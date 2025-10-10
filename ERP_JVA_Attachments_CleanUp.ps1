@@ -1,10 +1,14 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Download JVA (Journal Voucher) attachments from ERP database
-    
+    Clean up JVA (Journal Voucher) attachment files
+
+.DESCRIPTION
+    Deletes all files from the JVA attachments folder.
+    Logs all operations and provides summary of deleted files.
+
 .EXAMPLE
-    .\Download_JVA_Attachments.ps1
+    .\ERP_JVA_Attachments_CleanUp.ps1
 #>
 
 Import-Module "\\erp311script\Library\PSM1\ERP_mod_logging.psm1"
@@ -43,6 +47,46 @@ try {
     CreateGlobalVariables $PSCommandPath $PSScriptRoot
 
     $CleanUpPath = "\\dlerp311birt\ProcessingCenter\Main\output\JETPDF\JVA\attachments"
+
+    WriteLog "Starting cleanup process for: $CleanUpPath"
+
+    # Verify the path exists
+    if (-not (Test-Path -Path $CleanUpPath)) {
+        WriteLog "ERROR: Path does not exist: $CleanUpPath"
+        exit 1
+    }
+
+    # Get all files to delete (only in root folder, not subfolders)
+    $FilesToDelete = Get-ChildItem -Path $CleanUpPath -File
+
+    $FileCount = ($FilesToDelete | Measure-Object).Count
+    WriteLog "Found $FileCount file(s) to delete"
+
+    if ($FileCount -eq 0) {
+        WriteLog "No files to delete. Cleanup complete."
+        exit 0
+    }
+
+    # Delete the files
+    $DeletedCount = 0
+    $ErrorCount = 0
+
+    foreach ($File in $FilesToDelete) {
+        try {
+            WriteLog "Deleting: $($File.FullName)"
+            Remove-Item -Path $File.FullName -Force
+            $DeletedCount++
+        } catch {
+            WriteLog "ERROR deleting file $($File.FullName): $_"
+            $ErrorCount++
+        }
+    }
+
+    WriteLog "Cleanup complete. Deleted: $DeletedCount file(s), Errors: $ErrorCount"
+
+    if ($ErrorCount -gt 0) {
+        exit 1
+    }
 
 } catch {
     WriteLog "ERROR: $_"

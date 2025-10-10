@@ -96,16 +96,12 @@ try {
     $FolderPath = "\\dlerp311birt\ProcessingCenter\Main\output\JETPDF\JVA\attachments"
     $ArchivePath = "\\dlerp311birt\ProcessingCenter\Main\output\JETPDF\Archive\JVA\Attachments"
 
-    
-    # Example usage: Archive the attachments folder
     if (Test-Path -Path $FolderPath) {
         $archivedPath = Copy-FolderToArchive -SourcePath $FolderPath -ArchiveBasePath $ArchivePath
         WriteLog "Folder archived to: $archivedPath"
     } else {
         WriteLog "WARNING: Source folder not found: $FolderPath"
     }
-
-
 
 } catch {
     WriteLog "ERROR: $_"
