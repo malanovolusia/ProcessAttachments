@@ -37,6 +37,8 @@ if ($env:ENVIRONMENT -eq "PROD") {
 # Global variables
 $script:JVAattachCount = 0
 $script:JVAattachTotal = 0
+$script:JVAattachSkipped = 0
+$script:JVAattachMissingBlob = 0
 
 #region Helper Functions
 
@@ -133,6 +135,7 @@ ORDER BY a.OBJ_ATT_UNID
         $existsInOnBase = Test-OnBaseAttachmentExists -Connection $OnBaseConnection -AttachmentID $OBJ_ATT_UNID
 
         if ($existsInOnBase) {
+            $script:JVAattachSkipped++
             WriteLog "JVA $DOC_DEPT_CD $DOC_ID [v$DOC_VERS_NO] Attachment already in OnBase: [$OBJ_ATT_UNID] $fileName"
             continue
         }
@@ -185,7 +188,11 @@ WHERE b.OBJ_ATT_UNID = '$OBJ_ATT_UNID'
                     $indexEntry = "$OBJ_ATT_UNID|$(Format-PadDate $OBJ_ATT_DT)|$fileNameGUID|$fullPath|$OBJ_ATT_USER_ID|$($OBJ_ATT_DSCR -replace "`r`n", " ")|$DOC_ID|$DOC_DEPT_CD|$DOC_ID|JV|$DOC_CD|$DOC_VERS_NO|$OBJ_ATT_SG_UNID|$OBJ_ATT_SEQ_NO|$OBJ_ATT_ST|$OBJ_ATT_TYP|$OBJ_ATT_COMP_NM|$OBJ_ATT_COMP_DESC|$fileName|$CURR_FY|$CURR_PER"
                     $IndexFileStream.WriteLine($indexEntry)
                 }
+            } else {
+                WriteLog "JVA $DOC_DEPT_CD $DOC_ID [v$DOC_VERS_NO] WARNING: Blob data is NULL for attachment: [$OBJ_ATT_UNID] $fileName"
             }
+        } else {
+            WriteLog "JVA $DOC_DEPT_CD $DOC_ID [v$DOC_VERS_NO] WARNING: No blob record found for attachment: [$OBJ_ATT_UNID] $fileName"
         }
 
         $readerBlob.Close()
@@ -298,6 +305,7 @@ try {
     WriteLog "Total JVA documents processed: $docCount"
     WriteLog "Total attachments found: $script:JVAattachCount"
     WriteLog "Total attachments downloaded: $script:JVAattachTotal"
+    WriteLog "Total attachments skipped (already in OnBase): $script:JVAattachSkipped"
     WriteLog "========================================="
 
     # Clean up
