@@ -2,9 +2,9 @@
 <#
 .SYNOPSIS
     Download JVA (Journal Voucher) attachments from ERP database
-    
+
 .EXAMPLE
-    .\Download_JVA_Attachments.ps1
+    .\ERP_JVA_Attachments_Downloader.ps1
 #>
 
 Import-Module "\\erp311script\Library\PSM1\ERP_mod_logging.psm1"

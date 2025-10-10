@@ -48,10 +48,17 @@ try {
     WriteLog ""
 
     # Define script paths
-    $downloadScript = Join-Path $PSScriptRoot "ERP_Download_JVA_Attachments.ps1"
+    $cleanupScript = Join-Path $PSScriptRoot "ERP_JVA_Attachments_CleanUp.ps1"
+    $downloadScript = Join-Path $PSScriptRoot "ERP_JVA_Attachments_Downloader.ps1"
     $dipScript = Join-Path $PSScriptRoot "ERP_JVA_Attachments_DIP.ps1"
+    $archiverScript = Join-Path $PSScriptRoot "ERP_JVA_Attachments_Archiver.ps1"
 
     # Verify scripts exist
+    if (-not (Test-Path $cleanupScript)) {
+        WriteLog "ERROR: Cleanup script not found at: $cleanupScript"
+        exit 1
+    }
+
     if (-not (Test-Path $downloadScript)) {
         WriteLog "ERROR: Download script not found at: $downloadScript"
         exit 1
@@ -62,10 +69,44 @@ try {
         exit 1
     }
 
+    if (-not (Test-Path $archiverScript)) {
+        WriteLog "ERROR: Archiver script not found at: $archiverScript"
+        exit 1
+    }
+
     WriteLog "Scripts verified:"
+    WriteLog "  - Cleanup: $cleanupScript"
     WriteLog "  - Download: $downloadScript"
     WriteLog "  - DIP: $dipScript"
+    WriteLog "  - Archiver: $archiverScript"
     WriteLog ""
+
+    # Step 0: Cleanup Old Files
+    WriteLog "========================================="
+    WriteLog "STEP 0: Cleaning Up Old Files"
+    WriteLog "========================================="
+
+    $cleanupStartTime = Get-Date
+
+    try {
+        & $cleanupScript
+
+        if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) {
+            throw "Cleanup script failed with exit code: $LASTEXITCODE"
+        }
+
+        $cleanupEndTime = Get-Date
+        $cleanupDuration = $cleanupEndTime - $cleanupStartTime
+
+        WriteLog ""
+        WriteLog "Cleanup completed successfully in $($cleanupDuration.TotalSeconds) seconds"
+        WriteLog ""
+
+    } catch {
+        WriteLog "ERROR in cleanup step: $_"
+        WriteLog $_.ScriptStackTrace
+        exit 1
+    }
 
     # Step 1: Download JVA Attachments
     WriteLog "========================================="
@@ -121,16 +162,45 @@ try {
         exit 1
     }
 
+    # Step 3: Archive Processed Files
+    WriteLog "========================================="
+    WriteLog "STEP 3: Archiving Processed Files"
+    WriteLog "========================================="
+
+    $archiverStartTime = Get-Date
+
+    try {
+        & $archiverScript
+
+        if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) {
+            throw "Archiver script failed with exit code: $LASTEXITCODE"
+        }
+
+        $archiverEndTime = Get-Date
+        $archiverDuration = $archiverEndTime - $archiverStartTime
+
+        WriteLog ""
+        WriteLog "Archiving completed successfully in $($archiverDuration.TotalSeconds) seconds"
+        WriteLog ""
+
+    } catch {
+        WriteLog "ERROR in archiving step: $_"
+        WriteLog $_.ScriptStackTrace
+        exit 1
+    }
+
     # Final Summary
     $totalEndTime = Get-Date
-    $totalDuration = $totalEndTime - $downloadStartTime
+    $totalDuration = $totalEndTime - $cleanupStartTime
 
     WriteLog "========================================="
     WriteLog "JVA Attachment Processing Complete"
     WriteLog "========================================="
     WriteLog "Total execution time: $($totalDuration.TotalMinutes) minutes"
+    WriteLog "  - Cleanup: $($cleanupDuration.TotalSeconds) seconds"
     WriteLog "  - Download: $($downloadDuration.TotalSeconds) seconds"
     WriteLog "  - DIP Creation: $($dipDuration.TotalSeconds) seconds"
+    WriteLog "  - Archiving: $($archiverDuration.TotalSeconds) seconds"
     WriteLog "========================================="
     WriteLog ""
     WriteLog "Process completed successfully"
