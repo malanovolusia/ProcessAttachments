@@ -96,10 +96,14 @@ try {
     $cleanupStartTime = Get-Date
 
     try {
-        & $cleanupScript
+        $cleanupProcess = Start-Process -FilePath "powershell.exe" `
+            -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$cleanupScript`"" `
+            -Wait `
+            -PassThru `
+            -NoNewWindow
 
-        if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) {
-            throw "Cleanup script failed with exit code: $LASTEXITCODE"
+        if ($cleanupProcess.ExitCode -ne 0) {
+            throw "Cleanup script failed with exit code: $($cleanupProcess.ExitCode)"
         }
 
         $cleanupEndTime = Get-Date
@@ -123,10 +127,14 @@ try {
     $downloadStartTime = Get-Date
 
     try {
-        & $downloadScript
+        $downloadProcess = Start-Process -FilePath "powershell.exe" `
+            -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$downloadScript`"" `
+            -Wait `
+            -PassThru `
+            -NoNewWindow
 
-        if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) {
-            throw "Download script failed with exit code: $LASTEXITCODE"
+        if ($downloadProcess.ExitCode -ne 0) {
+            throw "Download script failed with exit code: $($downloadProcess.ExitCode)"
         }
 
         $downloadEndTime = Get-Date
@@ -150,10 +158,14 @@ try {
     $dipStartTime = Get-Date
 
     try {
-        & $dipScript
+        $dipProcess = Start-Process -FilePath "powershell.exe" `
+            -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$dipScript`"" `
+            -Wait `
+            -PassThru `
+            -NoNewWindow
 
-        if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) {
-            throw "DIP script failed with exit code: $LASTEXITCODE"
+        if ($dipProcess.ExitCode -ne 0) {
+            throw "DIP script failed with exit code: $($dipProcess.ExitCode)"
         }
 
         $dipEndTime = Get-Date
@@ -190,10 +202,14 @@ try {
     $validationStartTime = Get-Date
 
     try {
-        & $validationScript
+        $validationProcess = Start-Process -FilePath "powershell.exe" `
+            -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$validationScript`"" `
+            -Wait `
+            -PassThru `
+            -NoNewWindow
 
-        if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) {
-            throw "Validation script failed with exit code: $LASTEXITCODE"
+        if ($validationProcess.ExitCode -ne 0) {
+            throw "Validation script failed with exit code: $($validationProcess.ExitCode)"
         }
 
         $validationEndTime = Get-Date
@@ -217,10 +233,14 @@ try {
     $archiverStartTime = Get-Date
 
     try {
-        & $archiverScript
+        $archiverProcess = Start-Process -FilePath "powershell.exe" `
+            -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$archiverScript`"" `
+            -Wait `
+            -PassThru `
+            -NoNewWindow
 
-        if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) {
-            throw "Archiver script failed with exit code: $LASTEXITCODE"
+        if ($archiverProcess.ExitCode -ne 0) {
+            throw "Archiver script failed with exit code: $($archiverProcess.ExitCode)"
         }
 
         $archiverEndTime = Get-Date
