@@ -51,6 +51,7 @@ try {
     $cleanupScript = Join-Path $PSScriptRoot "ERP_JVA_Attachments_CleanUp.ps1"
     $downloadScript = Join-Path $PSScriptRoot "ERP_JVA_Attachments_Downloader.ps1"
     $dipScript = Join-Path $PSScriptRoot "ERP_JVA_Attachments_DIP.ps1"
+    $validationScript = Join-Path $PSScriptRoot "ERP_JVA_Attachments_Validation.ps1"
     $archiverScript = Join-Path $PSScriptRoot "ERP_JVA_Attachments_Archiver.ps1"
 
     # Verify scripts exist
@@ -69,6 +70,11 @@ try {
         exit 1
     }
 
+    if (-not (Test-Path $validationScript)) {
+        WriteLog "ERROR: Validation script not found at: $validationScript"
+        exit 1
+    }
+
     if (-not (Test-Path $archiverScript)) {
         WriteLog "ERROR: Archiver script not found at: $archiverScript"
         exit 1
@@ -78,6 +84,7 @@ try {
     WriteLog "  - Cleanup: $cleanupScript"
     WriteLog "  - Download: $downloadScript"
     WriteLog "  - DIP: $dipScript"
+    WriteLog "  - Validation: $validationScript"
     WriteLog "  - Archiver: $archiverScript"
     WriteLog ""
 
@@ -162,9 +169,49 @@ try {
         exit 1
     }
 
-    # Step 3: Archive Processed Files
+    # Step 3: Wait before validation
     WriteLog "========================================="
-    WriteLog "STEP 3: Archiving Processed Files"
+    WriteLog "STEP 3: Waiting 15 minutes before validation"
+    WriteLog "========================================="
+    WriteLog "Waiting to allow OnBase to process the DIP file..."
+    WriteLog "Wait started at: $(Get-Date -Format 'MM/dd/yyyy HH:mm:ss')"
+
+    $waitSeconds = 900  # 15 minutes = 900 seconds
+    Start-Sleep -Seconds $waitSeconds
+
+    WriteLog "Wait completed at: $(Get-Date -Format 'MM/dd/yyyy HH:mm:ss')"
+    WriteLog ""
+
+    # Step 4: Validate Attachments in OnBase
+    WriteLog "========================================="
+    WriteLog "STEP 4: Validating Attachments in OnBase"
+    WriteLog "========================================="
+
+    $validationStartTime = Get-Date
+
+    try {
+        & $validationScript
+
+        if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) {
+            throw "Validation script failed with exit code: $LASTEXITCODE"
+        }
+
+        $validationEndTime = Get-Date
+        $validationDuration = $validationEndTime - $validationStartTime
+
+        WriteLog ""
+        WriteLog "Validation completed successfully in $($validationDuration.TotalSeconds) seconds"
+        WriteLog ""
+
+    } catch {
+        WriteLog "ERROR in validation step: $_"
+        WriteLog $_.ScriptStackTrace
+        exit 1
+    }
+
+    # Step 5: Archive Processed Files
+    WriteLog "========================================="
+    WriteLog "STEP 5: Archiving Processed Files"
     WriteLog "========================================="
 
     $archiverStartTime = Get-Date
@@ -200,6 +247,8 @@ try {
     WriteLog "  - Cleanup: $($cleanupDuration.TotalSeconds) seconds"
     WriteLog "  - Download: $($downloadDuration.TotalSeconds) seconds"
     WriteLog "  - DIP Creation: $($dipDuration.TotalSeconds) seconds"
+    WriteLog "  - Wait Time: 900 seconds (15 minutes)"
+    WriteLog "  - Validation: $($validationDuration.TotalSeconds) seconds"
     WriteLog "  - Archiving: $($archiverDuration.TotalSeconds) seconds"
     WriteLog "========================================="
     WriteLog ""
