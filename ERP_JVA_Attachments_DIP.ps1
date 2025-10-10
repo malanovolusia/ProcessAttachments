@@ -193,7 +193,6 @@ Filename: $ORIGINAL_FILENAME
 
     # Write DIP footer
     $dipFooter = @"
-    
 >>Dummy Key: Total number of attachments: $dipCount attachments in this file.
 END:
 "@
