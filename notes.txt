@@ -1,0 +1,11 @@
+Task Scheduler 
+
+ERP_JVA_Attachments_Processor
+
+Runs Daily 8 pm
+
+
+C:\Windows\SysWOW64\WindowsPowerShell\v1.0\powershell.exe
+
+Arguments
+\\erp311script\d$\CGIADV\Scripts\UTIL\ps\ERP_JVA_Attachments\ERP_JVA_Attachments_Processor.ps1
