@@ -187,87 +187,171 @@ try {
     WriteLog "========================================="
 
     if ($notFoundCount -gt 0 -or $errorCount -gt 0) {
-        # Build detailed email message
+        # Build detailed HTML email message
         $strMsg = @"
-JVA Attachment Validation Results
-==================================
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; }
+        .container { padding: 30px; max-width: 900px; margin: 0 auto; }
+        h1 { border-bottom: 2px solid currentColor; padding-bottom: 10px; margin-top: 0; }
+        h2 { margin-top: 30px; border-bottom: 1px solid currentColor; padding-bottom: 8px; }
+        .summary { border: 1px solid currentColor; padding: 15px; margin: 20px 0; }
+        .summary-item { margin: 8px 0; font-size: 16px; }
+        .summary-item strong { display: inline-block; width: 250px; }
+        .alert { border: 2px solid currentColor; padding: 15px; margin: 20px 0; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; border: 1px solid currentColor; }
+        th { background-color: ButtonFace; padding: 12px; text-align: left; font-weight: 600; border: 1px solid currentColor; }
+        td { padding: 10px 12px; border-bottom: 1px solid currentColor; }
+        .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid currentColor; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>JVA Attachment Validation Results</h1>
 
-Summary:
-- Total attachments validated: $validatedCount
-- Found in OnBase: $foundCount
-- NOT found in OnBase: $notFoundCount
-- Errors during validation: $errorCount
+        <div class="alert">
+            <strong>Issues Found:</strong> $notFoundCount attachment(s) missing, $errorCount error(s) occurred
+        </div>
 
+        <div class="summary">
+            <div class="summary-item"><strong>Total Attachments Validated:</strong> $validatedCount</div>
+            <div class="summary-item"><strong>Found in OnBase:</strong> $foundCount</div>
+            <div class="summary-item"><strong>NOT Found in OnBase:</strong> $notFoundCount</div>
+            <div class="summary-item"><strong>Validation Errors:</strong> $errorCount</div>
+        </div>
 "@
 
-        # Add missing attachments details
+        # Add missing attachments table
         if ($notFoundCount -gt 0) {
             $strMsg += @"
 
-Missing Attachments ($notFoundCount):
-------------------------------------
+        <h2>Missing Attachments ($notFoundCount)</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Attachment ID</th>
+                    <th>Document ID</th>
+                    <th>Seq #</th>
+                    <th>Filename</th>
+                </tr>
+            </thead>
+            <tbody>
 "@
             foreach ($missing in $missingAttachments) {
                 $strMsg += @"
-
-  OBJ_ATT_UNID: $($missing.OBJ_ATT_UNID)
-  Document ID: $($missing.DOC_ID)
-  Sequence #: $($missing.SEQ_NO)
-  Filename: $($missing.ORIGINAL_FILENAME)
+                <tr>
+                    <td><strong>$($missing.OBJ_ATT_UNID)</strong></td>
+                    <td>$($missing.DOC_ID)</td>
+                    <td>$($missing.SEQ_NO)</td>
+                    <td>$($missing.ORIGINAL_FILENAME)</td>
+                </tr>
 "@
             }
+            $strMsg += @"
+            </tbody>
+        </table>
+"@
         }
 
-        # Add error attachments details
+        # Add error attachments table
         if ($errorCount -gt 0) {
             $strMsg += @"
 
-
-Validation Errors ($errorCount):
---------------------------------
+        <h2>Validation Errors ($errorCount)</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Attachment ID</th>
+                    <th>Document ID</th>
+                    <th>Seq #</th>
+                    <th>Filename</th>
+                    <th>Error</th>
+                </tr>
+            </thead>
+            <tbody>
 "@
             foreach ($error in $errorAttachments) {
                 $strMsg += @"
-
-  OBJ_ATT_UNID: $($error.OBJ_ATT_UNID)
-  Document ID: $($error.DOC_ID)
-  Sequence #: $($error.SEQ_NO)
-  Filename: $($error.ORIGINAL_FILENAME)
-  Error: $($error.ERROR)
+                <tr>
+                    <td><strong>$($error.OBJ_ATT_UNID)</strong></td>
+                    <td>$($error.DOC_ID)</td>
+                    <td>$($error.SEQ_NO)</td>
+                    <td>$($error.ORIGINAL_FILENAME)</td>
+                    <td>$($error.ERROR)</td>
+                </tr>
 "@
             }
+            $strMsg += @"
+            </tbody>
+        </table>
+"@
         }
 
         $strMsg += @"
 
-
-Please review the log file for complete details: $global:logname
+        <div class="footer">
+            <p><strong>Log File:</strong> $global:logname</p>
+            <p><em>Please review the log file for complete details.</em></p>
+            <p style="color: #999; font-size: 12px;">Generated: $(Get-Date -Format 'MM/dd/yyyy HH:mm:ss')</p>
+        </div>
+    </div>
+</body>
+</html>
 "@
 
-        $strSub = "JVA Attachment Validation - Issues Found ($notFoundCount missing, $errorCount errors)"
+        $strSub = "JVA Attachment Processing Validation - Issues Found ($notFoundCount missing, $errorCount errors)"
 
         NotifyCustom -Subject $strSub -Message $strMsg -Target $emailString -Attachment1 "" -Attachment2 ""
         WriteLog "WARNING: $notFoundCount attachments were not found in OnBase, $errorCount errors occurred"
     } else {
-        # Send success email
+        # Send success email with HTML
         $strMsg = @"
-JVA Attachment Validation Results
-==================================
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; }
+        .container { padding: 30px; max-width: 900px; margin: 0 auto; }
+        h1 { border-bottom: 2px solid currentColor; padding-bottom: 10px; margin-top: 0; }
+        .success { border: 2px solid currentColor; padding: 20px; margin: 20px 0; }
+        .success h2 { margin-top: 0; text-align: center; }
+        .summary { border: 1px solid currentColor; padding: 20px; margin: 20px 0; }
+        .summary-item { margin: 10px 0; font-size: 16px; }
+        .summary-item strong { display: inline-block; width: 250px; }
+        .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid currentColor; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>JVA Attachment Validation Results</h1>
 
-SUCCESS: Attachments validated successfully!
+        <div class="success">
+            <h2>All Attachments Validated Successfully!</h2>
+        </div>
 
-Summary:
-- Total attachments validated: $validatedCount
-- Found in OnBase: $foundCount
-- NOT found in OnBase: 0
-- Errors during validation: 0
+        <div class="summary">
+            <div class="summary-item"><strong>Total Attachments Validated:</strong> $validatedCount</div>
+            <div class="summary-item"><strong>Found in OnBase:</strong> $foundCount</div>
+            <div class="summary-item"><strong>NOT Found in OnBase:</strong> 0</div>
+            <div class="summary-item"><strong>Validation Errors:</strong> 0</div>
+        </div>
 
-All JVA attachments have been successfully validated in OnBase.
+        <p style="font-size: 16px; margin: 20px 0;">
+            All JVA attachments have been successfully validated in OnBase. No issues were detected.
+        </p>
 
-Log file: $global:logname
+        <div class="footer">
+            <p><strong>Log File:</strong> $global:logname</p>
+            <p style="font-size: 12px;">Generated: $(Get-Date -Format 'MM/dd/yyyy HH:mm:ss')</p>
+        </div>
+    </div>
+</body>
+</html>
 "@
 
-        $strSub = "JVA Attachment Validation - SUCCESS ($validatedCount attachments validated)"
+        $strSub = "JVA Attachment Processing Validation - SUCCESS ($validatedCount attachments validated)"
 
         NotifyCustom -Subject $strSub -Message $strMsg -Target $emailString -Attachment1 "" -Attachment2 ""
         WriteLog "SUCCESS: All attachments validated successfully"

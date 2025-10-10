@@ -340,7 +340,6 @@ try {
         FROM O_FINPROD.JV_DOC_HDR
         WHERE OBJ_ATT_PG_UNID IS NOT NULL AND OBJ_ATT_PG_TOT > 0 AND DOC_CREA_DT > '05-OCT-2025' AND DOC_CD = 'JVA' AND DOC_PHASE_CD = 3
         ORDER BY DOC_ID, DOC_VERS_NO
-        FETCH FIRST 30 ROW ONLY
 "@
 
     WriteLog "Querying for JVA documents..."
@@ -352,7 +351,7 @@ try {
 
     $docCount = 0
 
-    
+
     while ($reader.Read()) {
         $docCount++
 

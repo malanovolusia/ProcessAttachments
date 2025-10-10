@@ -188,7 +188,7 @@ try {
     WriteLog "Waiting to allow OnBase to process the DIP file..."
     WriteLog "Wait started at: $(Get-Date -Format 'MM/dd/yyyy HH:mm:ss')"
 
-    $waitSeconds = 900  # 15 minutes = 900 seconds
+    $waitSeconds = 600  # 15 minutes = 900 seconds
     Start-Sleep -Seconds $waitSeconds
 
     WriteLog "Wait completed at: $(Get-Date -Format 'MM/dd/yyyy HH:mm:ss')"
@@ -267,7 +267,7 @@ try {
     WriteLog "  - Cleanup: $($cleanupDuration.TotalSeconds) seconds"
     WriteLog "  - Download: $($downloadDuration.TotalSeconds) seconds"
     WriteLog "  - DIP Creation: $($dipDuration.TotalSeconds) seconds"
-    WriteLog "  - Wait Time: 900 seconds (15 minutes)"
+    WriteLog "  - Wait Time: 600 seconds (10 minutes)"
     WriteLog "  - Validation: $($validationDuration.TotalSeconds) seconds"
     WriteLog "  - Archiving: $($archiverDuration.TotalSeconds) seconds"
     WriteLog "========================================="
