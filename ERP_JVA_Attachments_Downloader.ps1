@@ -181,7 +181,11 @@ function Test-OnBaseAttachmentExists {
     )
     if (-not $CheckDuplicates) { return $false }
     try {
-        $sql = "SELECT COUNT(*) AS NUM_FOUND FROM hsi.keyitem481 WHERE hsi.keyitem481.keyvaluebig = $AttachmentID AND (SELECT itemtypenum FROM hsi.itemdata WHERE hsi.itemdata.itemnum = hsi.keyitem481.itemnum) = 132"
+        $sql = "SELECT COUNT(*) AS NUM_FOUND
+FROM hsi.keyitem481 k
+INNER JOIN hsi.itemdata i ON i.itemnum = k.itemnum
+WHERE k.keyvaluebig = $AttachmentID
+AND i.itemtypenum IN (132, 547, 548, 549)"
         $cmd = New-Object System.Data.SqlClient.SqlCommand($sql, $Connection)
         $reader = $cmd.ExecuteReader()
         $count = 0
