@@ -23,7 +23,7 @@ Import-Module "\\erp311script\Library\PSM1\ERP_mod_exec.psm1"
 Import-Module "\\erp311script\Library\PSM1\ERP_mod_interface.psm1"
 Import-Module "\\erp311script\Library\PSM1\ERP_mod_reporting.psm1"
 
-$env:ENVIRONMENT = "DEV"
+$env:ENVIRONMENT = "PROD"
 
 if ($env:ENVIRONMENT -eq "PROD") {
     # Production logging handled by module

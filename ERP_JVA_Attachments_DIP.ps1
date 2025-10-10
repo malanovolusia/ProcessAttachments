@@ -28,7 +28,7 @@ Import-Module "\\erp311script\Library\PSM1\ERP_mod_interface.psm1"
 Import-Module "\\erp311script\Library\PSM1\ERP_mod_reporting.psm1"
 
 
-$env:ENVIRONMENT = "DEV"
+$env:ENVIRONMENT = "PROD"
 
 if ($env:ENVIRONMENT -eq "PROD") {
     # Production logging handled by module
@@ -85,6 +85,8 @@ try {
     $AttachmentsPath = "\\dlerp311birt\ProcessingCenter\Main\output\JETPDF\JVA\attachments"
     $IndexFilePath = Join-Path $AttachmentsPath "!JVA_attachment_index.txt"
     $DIPFilePath = Join-Path $AttachmentsPath "!JVA_attachment_indexes_DIP.txt"
+
+    $DIP_ProcessingPath = "\\dlerp311birt\onbase\ACC_JournalVouchers\"
 
     WriteLog "Starting DIP File Creation"
     WriteLog "Attachments Path: $AttachmentsPath"
