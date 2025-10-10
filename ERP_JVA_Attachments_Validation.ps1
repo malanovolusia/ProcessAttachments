@@ -109,7 +109,7 @@ try {
     # Read index file
     $indexLines = @(Get-Content $IndexFilePath)
     if ($indexLines.Length -lt 2) {
-        WriteLog "ERROR: Index file is empty or has no data rows"
+        WriteLog "INFO: Index file is empty or has no data rows"
         $onbaseConnection.Close()
 
         $strSub = "JVA Attachment Processing Validation (No new JVA Attachments found to validate) - INFO "
