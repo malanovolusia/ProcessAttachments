@@ -120,6 +120,11 @@ try {
     $headerLine = $indexLines[0]
     $dataLines = $indexLines[1..($indexLines.Length - 1)]
 
+    if ($indexLines.Count -le 1) {
+        WriteLog "No data lines found in index file (only headers present)"
+        $dataLines = @()
+    }
+
     WriteLog "Found $($dataLines.Length) attachments in index file"
 
     $dipCount = 0
