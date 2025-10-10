@@ -210,6 +210,25 @@ END:
     WriteLog "DIP file: $DIPFilePath"
     WriteLog "========================================="
 
+    # Copy DIP file to processing path
+    try {
+        WriteLog "Copying DIP file to processing path: $DIP_ProcessingPath"
+
+        # Ensure the destination directory exists
+        if (-not (Test-Path $DIP_ProcessingPath)) {
+            WriteLog "Creating destination directory: $DIP_ProcessingPath"
+            New-Item -Path $DIP_ProcessingPath -ItemType Directory -Force | Out-Null
+        }
+
+        $destinationFile = Join-Path $DIP_ProcessingPath (Split-Path $DIPFilePath -Leaf)
+        Copy-Item -Path $DIPFilePath -Destination $destinationFile -Force
+
+        WriteLog "DIP file successfully copied to: $destinationFile"
+    } catch {
+        WriteLog "ERROR: Failed to copy DIP file to processing path: $_"
+        # Don't exit - the DIP file was created successfully
+    }
+
     WriteLog "DIP file creation completed successfully"
 
 } catch {
